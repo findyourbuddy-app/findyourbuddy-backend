@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +23,28 @@ class Settings(BaseSettings):
     rate_limit_auth_per_minute: int = 10
 
     moderation_banned_words: str = "spam,scam"
+
+    scraper_api_key: str
+    allowed_event_categories: list[str] = [
+        "running",
+        "coffee",
+        "concert",
+        "climbing",
+        "hiking",
+        "cycling",
+        "yoga",
+        "boardgames",
+        "football",
+        "party",
+        "other",
+    ]
+
+    @field_validator("allowed_event_categories", mode="before")
+    @classmethod
+    def _split_allowed_event_categories(cls, value: str | list[str]) -> str | list[str]:
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
 
     media_root: str = "media"
     media_base_url: str = "/media"

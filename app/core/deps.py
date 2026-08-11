@@ -1,7 +1,8 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.security import decode_access_token
 from app.database import get_db
 from app.models.user import User
@@ -35,3 +36,10 @@ def get_current_staff_user(current_user: User = Depends(get_current_user)) -> Us
             status_code=status.HTTP_403_FORBIDDEN, detail="Staff privileges required"
         )
     return current_user
+
+
+def require_scraper_api_key(x_scraper_api_key: str | None = Header(default=None)) -> None:
+    if x_scraper_api_key is None or x_scraper_api_key != get_settings().scraper_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid scraper API key"
+        )

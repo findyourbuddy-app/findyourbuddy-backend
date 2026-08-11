@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -8,6 +8,9 @@ from app.database import Base
 
 class Event(Base):
     __tablename__ = "events"
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_events_source_external_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(200))
@@ -17,5 +20,8 @@ class Event(Base):
     latitude: Mapped[float] = mapped_column()
     longitude: Mapped[float] = mapped_column()
     starts_at: Mapped[datetime] = mapped_column(index=True)
-    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    creator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None)
+    source: Mapped[str | None] = mapped_column(String(50), default=None)
+    external_id: Mapped[str | None] = mapped_column(String(255), default=None)
+    source_url: Mapped[str | None] = mapped_column(String(500), default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
