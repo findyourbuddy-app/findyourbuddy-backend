@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     daily_swipe_limit: int = 50
     match_common_interest_weight: float = 0.6
     match_distance_weight: float = 0.4
+    match_max_distance_km: float = 50.0
+
+    media_root: str = "media"
+    media_base_url: str = "/media"
+
+    cors_allowed_origins: str = "*"
+    log_level: str = "INFO"
 
 
 @lru_cache

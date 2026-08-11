@@ -30,3 +30,6 @@ htmlcov/
 # Alembic (versioned migration scripts are kept, local db files are not)
 *.db
 *.sqlite3
+
+# Locally stored uploaded media
+media/

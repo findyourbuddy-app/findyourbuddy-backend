@@ -1,0 +1,53 @@
+from datetime import datetime, timedelta
+
+from fastapi.testclient import TestClient
+
+
+def _register_and_login(client: TestClient, email: str) -> dict[str, str]:
+    client.post(
+        "/auth/register",
+        json={"email": email, "password": "s3cret-pass", "display_name": email},
+    )
+    response = client.post("/auth/login", json={"email": email, "password": "s3cret-pass"})
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def _create_event(client: TestClient, headers: dict[str, str]) -> int:
+    response = client.post(
+        "/events/",
+        headers=headers,
+        json={
+            "title": "Trail run",
+            "category": "sports",
+            "location_name": "Central Park",
+            "latitude": 40.0,
+            "longitude": -73.0,
+            "starts_at": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+        },
+    )
+    return response.json()["id"]
+
+
+def test_mutual_like_creates_match_visible_via_api(client: TestClient) -> None:
+    a_headers = _register_and_login(client, "a@example.com")
+    b_headers = _register_and_login(client, "b@example.com")
+    a_id = client.get("/users/me", headers=a_headers).json()["id"]
+    b_id = client.get("/users/me", headers=b_headers).json()["id"]
+    event_id = _create_event(client, a_headers)
+
+    client.post(
+        "/swipes/",
+        headers=a_headers,
+        json={"target_id": b_id, "event_id": event_id, "direction": "like"},
+    )
+    assert client.get("/matches/", headers=a_headers).json() == []
+
+    client.post(
+        "/swipes/",
+        headers=b_headers,
+        json={"target_id": a_id, "event_id": event_id, "direction": "like"},
+    )
+
+    matches = client.get("/matches/", headers=a_headers).json()
+    assert len(matches) == 1
+    assert {matches[0]["user_a_id"], matches[0]["user_b_id"]} == {a_id, b_id}

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String
+from sqlalchemy import JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -15,3 +15,10 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+    age: Mapped[int | None] = mapped_column(default=None)
+    bio: Mapped[str | None] = mapped_column(Text, default=None)
+    interests: Mapped[list[str]] = mapped_column(JSON, default=list)
+    latitude: Mapped[float | None] = mapped_column(default=None)
+    longitude: Mapped[float | None] = mapped_column(default=None)
+    photo_url: Mapped[str | None] = mapped_column(default=None)
