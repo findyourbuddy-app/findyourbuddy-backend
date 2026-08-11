@@ -16,6 +16,7 @@ from app.services.message_service import (
     MessageBlockedError,
     NotMatchParticipantError,
     list_messages,
+    mark_messages_as_read,
     send_message,
 )
 from app.services.swipe_service import record_swipe
@@ -104,3 +105,35 @@ def test_send_message_blocks_banned_content(db_session: Session) -> None:
 
     with pytest.raises(MessageBlockedError):
         send_message(db_session, match.id, user_a, "this is a scam")
+
+
+def test_mark_messages_as_read_only_affects_received_unread_messages(db_session: Session) -> None:
+    user_a = _register(db_session, "a@example.com")
+    user_b = _register(db_session, "b@example.com")
+    event_id = _create_event(db_session, user_a)
+    match = _create_match(db_session, user_a, user_b, event_id)
+
+    send_message(db_session, match.id, user_a, "hey there")
+    send_message(db_session, match.id, user_a, "second message")
+    send_message(db_session, match.id, user_b, "reply")
+
+    count = mark_messages_as_read(db_session, match.id, user_b)
+
+    assert count == 2
+    messages = {message.content: message.is_read for message in list_messages(db_session, match.id, user_b)}
+    assert messages["hey there"] is True
+    assert messages["second message"] is True
+    assert messages["reply"] is False
+
+
+def test_mark_messages_as_read_is_idempotent(db_session: Session) -> None:
+    user_a = _register(db_session, "a@example.com")
+    user_b = _register(db_session, "b@example.com")
+    event_id = _create_event(db_session, user_a)
+    match = _create_match(db_session, user_a, user_b, event_id)
+    send_message(db_session, match.id, user_a, "hey there")
+
+    mark_messages_as_read(db_session, match.id, user_b)
+    second_count = mark_messages_as_read(db_session, match.id, user_b)
+
+    assert second_count == 0

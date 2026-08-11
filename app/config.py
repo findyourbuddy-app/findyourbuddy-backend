@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     match_distance_weight: float = 0.4
     match_max_distance_km: float = 50.0
 
+    rate_limit_default_per_minute: int = 100
+    rate_limit_auth_per_minute: int = 10
+
+    moderation_banned_words: str = "spam,scam"
+
     media_root: str = "media"
     media_base_url: str = "/media"
 

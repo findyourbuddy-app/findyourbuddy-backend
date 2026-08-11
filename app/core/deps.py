@@ -27,3 +27,11 @@ def get_current_user(
         raise credentials_error
 
     return user
+
+
+def get_current_staff_user(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.is_staff:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Staff privileges required"
+        )
+    return current_user

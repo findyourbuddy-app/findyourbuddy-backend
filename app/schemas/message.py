@@ -16,3 +16,7 @@ class MessageRead(BaseModel):
     content: str
     is_read: bool
     created_at: datetime
+
+
+class MessagesMarkedRead(BaseModel):
+    count: int

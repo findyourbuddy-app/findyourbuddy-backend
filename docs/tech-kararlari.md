@@ -12,8 +12,8 @@ standarda uyun.
 - **Veritabanı:** PostgreSQL (Supabase üzerinde barındırılıyor)
 - **Migration:** Alembic, `alembic/env.py` içinde `sqlalchemy.url` doğrudan
   `app.config.get_settings()`'ten okunuyor — `alembic.ini`'ye URL yazılmıyor
-- **Bağımlılık yönetimi:** pip + `requirements.txt`, tüm paketler pinlenmiş
-  sürümle (`==`)
+- **Bağımlılık yönetimi:** uv, `pyproject.toml` + `uv.lock`, sürümler
+  `uv.lock` üzerinden sabitleniyor
 - **Auth:** JWT (`python-jose`) + `passlib[bcrypt]` şifre hashleme
 - **Test:** `pytest` + `httpx`/`TestClient`, kapsam ölçümü için `pytest-cov`
 
@@ -110,16 +110,68 @@ factory fonksiyonu değişir, iş mantığı (`notification_service.py`,
 - İzin verilen origin'ler `CORS_ALLOWED_ORIGINS` config değerinden
   (virgülle ayrılmış string) okunuyor, kod içinde hardcode edilmiyor.
 
-## Ertelenen kararlar
+## Rate limiting
 
-- **Rate limiting** (swipe dışında genel API seviyesinde): trafik
-  arttıkça değerlendirilecek, şu an eklenmedi.
-- **Blok sonrası geriye dönük filtreleme:** bir kullanıcı engellendiğinde
-  yeni swipe/eşleşme akışından hemen filtreleniyor, ama blok öncesinde
-  zaten oluşmuş eşleşme/mesajlar geriye dönük gizlenmiyor. İstenirse
-  ayrıca ele alınmalı.
-- **Mesaj "okundu" işaretleme:** `Message.is_read` alanı modelde var ama
-  bunu güncelleyen bir endpoint henüz yok.
+- Swipe günlük limitinin dışında, genel API seviyesinde de istek sınırı
+  var: `app/core/rate_limit.py`'deki `slowapi` tabanlı `Limiter`, IP
+  bazlı (`get_remote_address`) çalışıyor.
+- `slowapi` üçüncü parti kütüphane olarak eklendi — IP/kullanıcı bazlı
+  pencereli sayaç mantığını sıfırdan yazıp test etmek yerine olgun, test
+  edilmiş bir kütüphane kullanmak daha güvenli.
+- Varsayılan limit tüm route'lara otomatik uygulanıyor
+  (`RATE_LIMIT_DEFAULT_PER_MINUTE`, config'te `default_limits` ile).
+  `/auth/register` ve `/auth/login` brute-force'a karşı daha sıkı bir
+  limitle (`RATE_LIMIT_AUTH_PER_MINUTE`) `@limiter.limit(...)` ile
+  override ediliyor.
+- Limit aşıldığında `429 Too Many Requests` dönüyor.
+- Testlerde `tests/conftest.py`'deki `_reset_rate_limiter` (autouse)
+  fixture'ı her testten önce sayaçları sıfırlıyor — aksi halde tüm test
+  oturumu boyunca aynı IP anahtarı üzerinden sayaçlar birikip ilgisiz
+  testleri kırardı. Limit değeri, testte `RATE_LIMIT_AUTH_PER_MINUTE`
+  env değişkeni + `get_settings.cache_clear()` ile geçici olarak
+  düşürülüp doğrulanabiliyor (`tests/test_rate_limit.py`).
+
+## Blok sonrası geriye dönük filtreleme
+
+- Karar: bloklu taraflar arası mesaj geçmişine erişim **tamamen
+  kesiliyor** (salt-okunur değil).
+- `matching_service.list_matches_for_user`, `safety_service.blocked_user_ids`
+  ile taraflar arasında blok varsa eşleşmeyi listeden çıkarıyor (blok
+  kaydı silinmiyor, sadece görünürlük kesiliyor — rapor/moderasyon
+  geçmişi bozulmuyor).
+- `message_service._get_match_for_participant`, iki taraf arasında blok
+  varsa `BlockedParticipantError` fırlatıyor; bu hem mesaj gönderme hem
+  de mesaj listeleme için geçerli. Router (`app/routers/messages.py`)
+  bunu `403`'e çeviriyor.
+
+## Mesaj "okundu" işaretleme
+
+- `PATCH /matches/{match_id}/messages/read` — eşleşmedeki, mevcut
+  kullanıcının **almış olduğu** tüm okunmamış mesajları toplu olarak
+  `is_read = True` yapar (tekil mesaj bazlı değil). Etkilenen mesaj
+  sayısını `{"count": int}` olarak döner.
+- `message_service.mark_messages_as_read`, `_get_match_for_participant`
+  üzerinden aynı `MatchNotFoundError` / `NotMatchParticipantError` /
+  `BlockedParticipantError` kontrollerini kullanır.
+
+## Moderasyon akışı (rapor durumu güncelleme)
+
+- Moderatör rolü basit bir alanla tanımlandı: `User.is_staff: bool`
+  (`app/core/deps.py::get_current_staff_user` dependency'si bunu
+  zorunlu kılıyor). Ayrı bir rol/izin tablosu yok — MVP kapsamında
+  yeterli, ihtiyaç artarsa genişletilir. `is_staff`'ı `True` yapan bir
+  API endpoint'i yok (kasıtlı — bu alan şimdilik DB üzerinden elle
+  yönetiliyor).
+- `PATCH /reports/{report_id}` (sadece staff) — `safety_service.
+  update_report_status` ile raporun `status` alanını günceller.
+  Rapor yoksa `ReportNotFoundError` → `404`. Staff olmayan kullanıcı
+  için `403`.
+
+## Unblock
+
+- `DELETE /users/{user_id}/block` — bloğu kaldırır, `204 No Content`
+  döner. Blok kaydı yoksa `safety_service.unblock_user` `BlockNotFoundError`
+  fırlatır, router bunu `404`'e çevirir.
 
 ## Dağıtım
 

@@ -7,12 +7,14 @@ from app.database import get_db
 from app.models.match import Match
 from app.models.message import Message
 from app.models.user import User
-from app.schemas.message import MessageCreate, MessageRead
+from app.schemas.message import MessageCreate, MessageRead, MessagesMarkedRead
 from app.services.message_service import (
+    BlockedParticipantError,
     MatchNotFoundError,
     MessageBlockedError,
     NotMatchParticipantError,
     list_messages,
+    mark_messages_as_read,
     send_message,
 )
 from app.services.notification_service import notify_new_message
@@ -36,6 +38,10 @@ def get_messages(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this match"
         ) from exc
+    except BlockedParticipantError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access messages with a blocked user"
+        ) from exc
 
 
 @router.post("/", response_model=MessageRead, status_code=status.HTTP_201_CREATED)
@@ -56,6 +62,10 @@ def post_message(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this match"
         ) from exc
+    except BlockedParticipantError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access messages with a blocked user"
+        ) from exc
     except MessageBlockedError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -67,3 +77,27 @@ def post_message(
     notify_new_message(notification_sender, message, recipient_id)
 
     return message
+
+
+@router.patch("/read", response_model=MessagesMarkedRead)
+def mark_read(
+    match_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessagesMarkedRead:
+    try:
+        count = mark_messages_as_read(db, match_id, current_user.id)
+    except MatchNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Match not found"
+        ) from exc
+    except NotMatchParticipantError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this match"
+        ) from exc
+    except BlockedParticipantError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access messages with a blocked user"
+        ) from exc
+
+    return MessagesMarkedRead(count=count)

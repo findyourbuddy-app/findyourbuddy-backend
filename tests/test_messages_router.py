@@ -105,3 +105,30 @@ def test_message_with_banned_content_is_rejected(client: TestClient) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_mark_messages_as_read_returns_count_of_affected_messages(client: TestClient) -> None:
+    a_headers = _register_and_login(client, "a@example.com")
+    b_headers = _register_and_login(client, "b@example.com")
+    match_id = _create_match(client, a_headers, b_headers)
+    client.post(f"/matches/{match_id}/messages/", headers=a_headers, json={"content": "hey"})
+    client.post(f"/matches/{match_id}/messages/", headers=a_headers, json={"content": "there"})
+
+    response = client.patch(f"/matches/{match_id}/messages/read", headers=b_headers)
+
+    assert response.status_code == 200
+    assert response.json()["count"] == 2
+
+    messages = client.get(f"/matches/{match_id}/messages/", headers=b_headers).json()
+    assert all(message["is_read"] for message in messages)
+
+
+def test_non_participant_cannot_mark_messages_as_read(client: TestClient) -> None:
+    a_headers = _register_and_login(client, "a@example.com")
+    b_headers = _register_and_login(client, "b@example.com")
+    outsider_headers = _register_and_login(client, "outsider@example.com")
+    match_id = _create_match(client, a_headers, b_headers)
+
+    response = client.patch(f"/matches/{match_id}/messages/read", headers=outsider_headers)
+
+    assert response.status_code == 403

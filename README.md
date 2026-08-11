@@ -6,11 +6,7 @@
 git clone <repo-url>
 cd findyourbuddy-backend
 
-python -m venv env
-env\Scripts\activate   # Windows
-# source env/bin/activate   # macOS/Linux
-
-pip install -r requirements.txt
+uv sync
 
 cp .env.example .env   # değerleri kendi ortamınıza göre doldurun
 ```
@@ -26,13 +22,13 @@ docker compose up -d
 ## Migration
 
 ```bash
-alembic upgrade head
+uv run alembic upgrade head
 ```
 
 ## Çalıştırma
 
 ```bash
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 ```
 
 API varsayılan olarak `http://127.0.0.1:8000` üzerinde çalışır, health check için `GET /health`.
@@ -40,5 +36,5 @@ API varsayılan olarak `http://127.0.0.1:8000` üzerinde çalışır, health che
 ## Test
 
 ```bash
-pytest
+uv run pytest
 ```
