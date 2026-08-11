@@ -1,18 +1,22 @@
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models.report import ReportReason
+from app.models.report import ReportReason, ReportStatus
 from app.schemas.safety import ReportCreate
 from app.schemas.user import UserCreate
 from app.services.auth_service import register_user
 from app.services.safety_service import (
     AlreadyBlockedError,
+    BlockNotFoundError,
     CannotBlockSelfError,
     CannotReportSelfError,
+    ReportNotFoundError,
     block_user,
     blocked_user_ids,
     create_report,
     is_blocked,
+    unblock_user,
+    update_report_status,
 )
 
 
@@ -67,6 +71,24 @@ def test_blocked_user_ids_includes_both_directions(db_session: Session) -> None:
     assert set(blocked_user_ids(db_session, a)) == {b, c}
 
 
+def test_unblock_user_removes_block(db_session: Session) -> None:
+    blocker = _register(db_session, "blocker@example.com")
+    blocked = _register(db_session, "blocked@example.com")
+    block_user(db_session, blocker, blocked)
+
+    unblock_user(db_session, blocker, blocked)
+
+    assert is_blocked(db_session, blocker, blocked) is False
+
+
+def test_unblock_nonexistent_block_raises(db_session: Session) -> None:
+    blocker = _register(db_session, "blocker@example.com")
+    blocked = _register(db_session, "blocked@example.com")
+
+    with pytest.raises(BlockNotFoundError):
+        unblock_user(db_session, blocker, blocked)
+
+
 def test_create_report(db_session: Session) -> None:
     reporter = _register(db_session, "reporter@example.com")
     reported = _register(db_session, "reported@example.com")
@@ -89,3 +111,22 @@ def test_cannot_report_self(db_session: Session) -> None:
         create_report(
             db_session, user, ReportCreate(reported_user_id=user, reason=ReportReason.OTHER)
         )
+
+
+def test_update_report_status_changes_status(db_session: Session) -> None:
+    reporter = _register(db_session, "reporter@example.com")
+    reported = _register(db_session, "reported@example.com")
+    report = create_report(
+        db_session,
+        reporter,
+        ReportCreate(reported_user_id=reported, reason=ReportReason.HARASSMENT),
+    )
+
+    updated = update_report_status(db_session, report.id, ReportStatus.REVIEWED)
+
+    assert updated.status == ReportStatus.REVIEWED
+
+
+def test_update_report_status_raises_for_unknown_report(db_session: Session) -> None:
+    with pytest.raises(ReportNotFoundError):
+        update_report_status(db_session, 999, ReportStatus.DISMISSED)

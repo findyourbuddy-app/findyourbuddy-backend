@@ -2,6 +2,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas.message import MessageRead
+from app.schemas.user import UserPublic
+
 
 class MatchRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -12,3 +15,5 @@ class MatchRead(BaseModel):
     user_b_id: int
     score: float
     created_at: datetime
+    other_user: UserPublic
+    last_message: MessageRead | None = None

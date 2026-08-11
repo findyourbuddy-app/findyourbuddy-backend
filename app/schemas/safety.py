@@ -30,3 +30,7 @@ class ReportRead(BaseModel):
     description: str | None
     status: ReportStatus
     created_at: datetime
+
+
+class ReportStatusUpdate(BaseModel):
+    status: ReportStatus

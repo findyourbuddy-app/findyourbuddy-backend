@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.notifications import get_notification_sender
+from app.core.rate_limit import limiter
 from app.database import Base, get_db
 from app.main import app
 
@@ -39,6 +40,13 @@ def db_session() -> Generator[Session, None, None]:
 @pytest.fixture()
 def notification_sender() -> FakeNotificationSender:
     return FakeNotificationSender()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter() -> Generator[None, None, None]:
+    """Her testten önce sayaçları sıfırlar, testler arası çakışmayı önler."""
+    limiter.reset()
+    yield
 
 
 @pytest.fixture()

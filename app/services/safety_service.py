@@ -18,6 +18,14 @@ class CannotReportSelfError(Exception):
     pass
 
 
+class BlockNotFoundError(Exception):
+    pass
+
+
+class ReportNotFoundError(Exception):
+    pass
+
+
 def block_user(db: Session, blocker_id: int, blocked_id: int) -> Block:
     if blocker_id == blocked_id:
         raise CannotBlockSelfError(blocker_id)
@@ -35,6 +43,19 @@ def block_user(db: Session, blocker_id: int, blocked_id: int) -> Block:
     db.commit()
     db.refresh(block)
     return block
+
+
+def unblock_user(db: Session, blocker_id: int, blocked_id: int) -> None:
+    block = (
+        db.query(Block)
+        .filter(Block.blocker_id == blocker_id, Block.blocked_id == blocked_id)
+        .first()
+    )
+    if block is None:
+        raise BlockNotFoundError(blocked_id)
+
+    db.delete(block)
+    db.commit()
 
 
 def is_blocked(db: Session, user_a_id: int, user_b_id: int) -> bool:
@@ -69,6 +90,17 @@ def create_report(db: Session, reporter_id: int, data: ReportCreate) -> Report:
         status=ReportStatus.PENDING,
     )
     db.add(report)
+    db.commit()
+    db.refresh(report)
+    return report
+
+
+def update_report_status(db: Session, report_id: int, new_status: ReportStatus) -> Report:
+    report = db.get(Report, report_id)
+    if report is None:
+        raise ReportNotFoundError(report_id)
+
+    report.status = new_status
     db.commit()
     db.refresh(report)
     return report

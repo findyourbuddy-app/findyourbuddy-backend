@@ -6,8 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models.match import Match
+from app.models.message import Message
 from app.models.swipe import Swipe, SwipeDirection
 from app.models.user import User
+from app.services.safety_service import blocked_user_ids
 
 logger = logging.getLogger(__name__)
 
@@ -120,10 +122,41 @@ def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int)
     return match
 
 
+def _other_user_id(match: Match, user_id: int) -> int:
+    return match.user_b_id if match.user_a_id == user_id else match.user_a_id
+
+
 def list_matches_for_user(db: Session, user_id: int) -> list[Match]:
-    return (
+    blocked_ids = set(blocked_user_ids(db, user_id))
+    matches = (
         db.query(Match)
         .filter(or_(Match.user_a_id == user_id, Match.user_b_id == user_id))
         .order_by(Match.created_at.desc())
         .all()
     )
+    return [match for match in matches if _other_user_id(match, user_id) not in blocked_ids]
+
+
+def _last_message(db: Session, match_id: int) -> Message | None:
+    return (
+        db.query(Message)
+        .filter(Message.match_id == match_id)
+        .order_by(Message.created_at.desc())
+        .first()
+    )
+
+
+def list_matches_with_details(
+    db: Session, user_id: int
+) -> list[tuple[Match, User, Message | None]]:
+    matches = list_matches_for_user(db, user_id)
+
+    other_ids = {_other_user_id(match, user_id) for match in matches}
+    users_by_id = {
+        user.id: user for user in db.query(User).filter(User.id.in_(other_ids)).all()
+    }
+
+    return [
+        (match, users_by_id[_other_user_id(match, user_id)], _last_message(db, match.id))
+        for match in matches
+    ]

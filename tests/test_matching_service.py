@@ -9,7 +9,13 @@ from app.schemas.swipe import SwipeCreate
 from app.schemas.user import UserCreate, UserUpdate
 from app.services.auth_service import register_user
 from app.services.event_service import create_event
-from app.services.matching_service import list_matches_for_user, try_create_match
+from app.services.matching_service import (
+    list_matches_for_user,
+    list_matches_with_details,
+    try_create_match,
+)
+from app.services.message_service import send_message
+from app.services.safety_service import block_user
 from app.services.swipe_service import record_swipe
 from app.services.user_service import update_profile
 
@@ -160,3 +166,55 @@ def test_list_matches_for_user_includes_matches_from_either_side(db_session: Ses
     assert len(list_matches_for_user(db_session, user_a)) == 2
     assert len(list_matches_for_user(db_session, user_b)) == 1
     assert len(list_matches_for_user(db_session, user_c)) == 1
+
+
+def test_list_matches_for_user_excludes_matches_with_blocked_users(db_session: Session) -> None:
+    user_a = _register(db_session, "a@example.com")
+    user_b = _register(db_session, "b@example.com")
+    event_id = _create_event(db_session, user_a)
+
+    _swipe(db_session, user_a, user_b, event_id, SwipeDirection.LIKE)
+    _swipe(db_session, user_b, user_a, event_id, SwipeDirection.LIKE)
+    try_create_match(db_session, user_a, user_b, event_id)
+
+    block_user(db_session, blocker_id=user_a, blocked_id=user_b)
+
+    assert list_matches_for_user(db_session, user_a) == []
+    assert list_matches_for_user(db_session, user_b) == []
+
+
+def test_list_matches_with_details_resolves_other_user(db_session: Session) -> None:
+    user_a = _register(db_session, "a@example.com")
+    user_b = _register(db_session, "b@example.com")
+    event_id = _create_event(db_session, user_a)
+    _swipe(db_session, user_a, user_b, event_id, SwipeDirection.LIKE)
+    _swipe(db_session, user_b, user_a, event_id, SwipeDirection.LIKE)
+    try_create_match(db_session, user_a, user_b, event_id)
+
+    details = list_matches_with_details(db_session, user_a)
+
+    assert len(details) == 1
+    match, other_user, last_message = details[0]
+    assert other_user.id == user_b
+    assert last_message is None
+    assert match.event_id == event_id
+
+
+def test_list_matches_with_details_returns_most_recent_message(db_session: Session) -> None:
+    user_a = _register(db_session, "a@example.com")
+    user_b = _register(db_session, "b@example.com")
+    event_id = _create_event(db_session, user_a)
+    _swipe(db_session, user_a, user_b, event_id, SwipeDirection.LIKE)
+    _swipe(db_session, user_b, user_a, event_id, SwipeDirection.LIKE)
+    match = try_create_match(db_session, user_a, user_b, event_id)
+    assert match is not None
+
+    send_message(db_session, match.id, user_a, "İlk mesaj")
+    send_message(db_session, match.id, user_b, "İkinci mesaj")
+
+    details = list_matches_with_details(db_session, user_a)
+
+    _, _, last_message = details[0]
+    assert last_message is not None
+    assert last_message.content == "İkinci mesaj"
+    assert last_message.sender_id == user_b
