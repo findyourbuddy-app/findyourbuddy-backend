@@ -9,7 +9,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.config import get_settings
 from app.core.logging import configure_logging
 from app.core.rate_limit import limiter
-from app.routers import auth, events, health, matches, messages, safety, swipes, users
+from app.routers import auth, events, health, internal, matches, messages, safety, swipes, users
 
 configure_logging()
 settings = get_settings()
@@ -36,6 +36,7 @@ app.include_router(swipes.router)
 app.include_router(matches.router)
 app.include_router(messages.router)
 app.include_router(safety.router)
+app.include_router(internal.router)
 
 app.mount(
     settings.media_base_url,

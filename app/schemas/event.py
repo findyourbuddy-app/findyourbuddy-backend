@@ -24,5 +24,8 @@ class EventRead(BaseModel):
     latitude: float
     longitude: float
     starts_at: datetime
-    creator_id: int
+    creator_id: int | None
+    source: str | None
+    external_id: str | None
+    source_url: str | None
     created_at: datetime

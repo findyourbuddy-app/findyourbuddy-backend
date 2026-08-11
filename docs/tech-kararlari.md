@@ -173,6 +173,39 @@ factory fonksiyonu değişir, iş mantığı (`notification_service.py`,
   döner. Blok kaydı yoksa `safety_service.unblock_user` `BlockNotFoundError`
   fırlatır, router bunu `404`'e çevirir.
 
+## Etkinlik ingestion (scraper entegrasyonu)
+
+- Ayrı bir `findyourbuddy-scraper` reposu, etkinlikleri **REST API
+  üzerinden** gönderiyor — DB'ye doğrudan yazmıyor.
+- `Event.creator_id` **nullable** yapıldı: scraper kaynaklı etkinliklerin
+  gerçek bir sahibi yok, yapay bir "system user" icat etmek yerine bu
+  daha dürüst bir model. Manuel oluşturulan etkinliklerde (`POST
+  /events/`, JWT auth) `creator_id` her zaman dolu.
+- `Event.source` / `Event.external_id` **nullable** — manuel oluşturulan
+  etkinliklerde bu alanlar boş kalır; `(source, external_id)` unique
+  constraint Postgres'te NULL/NULL çiftlerini birbirinden ayrı saydığı
+  için manuel etkinlikler bu kısıtla çakışmıyor.
+- `source` alanı kasıtlı olarak sabit bir enum/Literal ile
+  sınırlanmadı: yeni bir scraper kaynağı eklemek backend'de kod/migration
+  değişikliği gerektirmemeli (categories'in aksine, source'un kapalı bir
+  kümesi yok).
+- **Auth:** kullanıcı JWT'sinden tamamen ayrı, basit bir servis-to-servis
+  anahtarı. `app/core/deps.py::require_scraper_api_key`,
+  `X-Scraper-Api-Key` header'ını `SCRAPER_API_KEY` (config, zorunlu) ile
+  karşılaştırır. `POST /internal/events/ingest` sadece bu dependency ile
+  korunuyor, `get_current_user` ile karışmıyor.
+- **İzin verilen kategoriler** config-driven:
+  `ALLOWED_EVENT_CATEGORIES` — frontend'deki `src/constants/categories.ts`
+  ile birebir aynı liste (`running, coffee, concert, climbing, hiking,
+  cycling, yoga, boardgames, football, party, other`). Bu liste sadece
+  ingestion'da zorunlu; manuel `POST /events/` kategori kısıtına tabi
+  değil (mevcut davranış korundu, testler `category="sports"` gibi
+  keyfi değerler kullanıyor).
+- `event_ingestion_service.ingest_events`, `(source, external_id)`
+  eşleşen kayıt varsa günceller (upsert), yoksa oluşturur. Geçersiz
+  kategorili bir kayıt sadece `skipped` sayılır ve `errors`'a eklenir —
+  tek bir hatalı kayıt batch'in geri kalanını düşürmez.
+
 ## Dağıtım
 
 - `Dockerfile`: `python:3.13-slim`, sadece `app/`, `alembic/`,
