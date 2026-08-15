@@ -6,7 +6,13 @@ from app.database import get_db
 from app.models.event import Event
 from app.models.user import User
 from app.schemas.event import EventCreate, EventRead
-from app.services.event_service import create_event, get_event, list_events
+from app.services.event_service import (
+    count_attendees,
+    count_attendees_bulk,
+    create_event,
+    get_event,
+    list_events,
+)
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -19,10 +25,17 @@ def list_all_events(
     limit: int = 50,
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
-) -> list[Event]:
-    return list_events(
+) -> list[EventRead]:
+    events = list_events(
         db, category=category, upcoming_only=upcoming_only, skip=skip, limit=limit
     )
+    attendee_counts = count_attendees_bulk(db, [event.id for event in events])
+    return [
+        EventRead.model_validate(event).model_copy(
+            update={"attendee_count": attendee_counts.get(event.id, 0)}
+        )
+        for event in events
+    ]
 
 
 @router.get("/{event_id}", response_model=EventRead)
@@ -30,11 +43,13 @@ def read_event(
     event_id: int,
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
-) -> Event:
+) -> EventRead:
     event = get_event(db, event_id)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-    return event
+    return EventRead.model_validate(event).model_copy(
+        update={"attendee_count": count_attendees(db, event_id)}
+    )
 
 
 @router.post("/", response_model=EventRead, status_code=status.HTTP_201_CREATED)

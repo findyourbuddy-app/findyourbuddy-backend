@@ -136,6 +136,40 @@ def test_create_swipe_returns_429_when_daily_limit_reached(
     get_settings.cache_clear()
 
 
+def test_create_swipe_bypasses_daily_limit_for_premium_user(
+    client: TestClient, db_session, monkeypatch
+) -> None:
+    from app.services.subscription_service import grant_premium
+
+    monkeypatch.setenv("DAILY_SWIPE_LIMIT", "1")
+    get_settings.cache_clear()
+
+    swiper_headers = _register_and_login(client, "swiper@example.com")
+    swiper_id = client.get("/users/me", headers=swiper_headers).json()["id"]
+    grant_premium(db_session, swiper_id)
+    target_1_id = client.get(
+        "/users/me", headers=_register_and_login(client, "target1@example.com")
+    ).json()["id"]
+    target_2_id = client.get(
+        "/users/me", headers=_register_and_login(client, "target2@example.com")
+    ).json()["id"]
+    event_id = _create_event(client, swiper_headers)
+
+    client.post(
+        "/swipes/",
+        headers=swiper_headers,
+        json={"target_id": target_1_id, "event_id": event_id, "direction": "like"},
+    )
+    response = client.post(
+        "/swipes/",
+        headers=swiper_headers,
+        json={"target_id": target_2_id, "event_id": event_id, "direction": "like"},
+    )
+
+    assert response.status_code == 201
+    get_settings.cache_clear()
+
+
 def test_get_candidates_excludes_self(client: TestClient) -> None:
     swiper_headers = _register_and_login(client, "swiper@example.com")
     _register_and_login(client, "other@example.com")
@@ -151,12 +185,28 @@ def test_get_candidates_excludes_self(client: TestClient) -> None:
     assert swiper_id not in candidate_ids
 
 
-def test_get_likes_received_returns_unreciprocated_likers(client: TestClient) -> None:
+def test_get_likes_received_does_not_require_premium(client: TestClient) -> None:
+    user_headers = _register_and_login(client, "user@example.com")
+    event_id = _create_event(client, user_headers)
+
+    response = client.get(
+        "/swipes/likes-received", headers=user_headers, params={"event_id": event_id}
+    )
+
+    assert response.status_code == 200
+
+
+def test_get_likes_received_returns_unreciprocated_likers(
+    client: TestClient, db_session
+) -> None:
+    from app.services.subscription_service import grant_premium
+
     user_headers = _register_and_login(client, "user@example.com")
     liker_headers = _register_and_login(client, "liker@example.com")
     user_id = client.get("/users/me", headers=user_headers).json()["id"]
     liker_id = client.get("/users/me", headers=liker_headers).json()["id"]
     event_id = _create_event(client, user_headers)
+    grant_premium(db_session, user_id)
 
     client.post(
         "/swipes/",
@@ -169,7 +219,7 @@ def test_get_likes_received_returns_unreciprocated_likers(client: TestClient) ->
     )
 
     assert response.status_code == 200
-    liker_ids = [user["id"] for user in response.json()]
+    liker_ids = [item["user"]["id"] for item in response.json()]
     assert liker_ids == [liker_id]
 
 

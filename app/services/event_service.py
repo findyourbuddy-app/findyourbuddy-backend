@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.bookmark import Bookmark
@@ -34,6 +35,27 @@ def list_events(
     if upcoming_only:
         query = query.filter(Event.starts_at >= datetime.utcnow())
     return query.order_by(Event.starts_at).offset(skip).limit(limit).all()
+
+
+def count_attendees(db: Session, event_id: int) -> int:
+    return (
+        db.query(Swipe.swiper_id)
+        .filter(Swipe.event_id == event_id)
+        .distinct()
+        .count()
+    )
+
+
+def count_attendees_bulk(db: Session, event_ids: list[int]) -> dict[int, int]:
+    if not event_ids:
+        return {}
+    rows = (
+        db.query(Swipe.event_id, func.count(func.distinct(Swipe.swiper_id)))
+        .filter(Swipe.event_id.in_(event_ids))
+        .group_by(Swipe.event_id)
+        .all()
+    )
+    return {event_id: count for event_id, count in rows}
 
 
 def delete_expired_events(db: Session, retention_days: int) -> int:

@@ -18,6 +18,9 @@ def _ordered_pair(user_a_id: int, user_b_id: int) -> tuple[int, int]:
     return (user_a_id, user_b_id) if user_a_id < user_b_id else (user_b_id, user_a_id)
 
 
+_LIKE_DIRECTIONS = (SwipeDirection.LIKE, SwipeDirection.SUPER_LIKE)
+
+
 def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> bool:
     like_from_a = (
         db.query(Swipe)
@@ -25,7 +28,7 @@ def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: i
             Swipe.swiper_id == user_a_id,
             Swipe.target_id == user_b_id,
             Swipe.event_id == event_id,
-            Swipe.direction == SwipeDirection.LIKE,
+            Swipe.direction.in_(_LIKE_DIRECTIONS),
         )
         .first()
     )
@@ -35,7 +38,7 @@ def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: i
             Swipe.swiper_id == user_b_id,
             Swipe.target_id == user_a_id,
             Swipe.event_id == event_id,
-            Swipe.direction == SwipeDirection.LIKE,
+            Swipe.direction.in_(_LIKE_DIRECTIONS),
         )
         .first()
     )

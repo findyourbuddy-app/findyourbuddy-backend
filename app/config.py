@@ -7,14 +7,26 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Uygulama genelinde kullanılan, .env üzerinden okunan ayarlar."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     database_url: str
+    redis_url: str | None = None
+    iyzico_api_key: str = "sandbox-dummy-api-key"
+    iyzico_secret_key: str = "sandbox-dummy-secret-key"
+    iyzico_base_url: str = "https://sandbox-api.iyzipay.com"
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24
 
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_sender: str = "noreply@findyourbuddy.com"
+
     daily_swipe_limit: int = 50
+    daily_super_like_limit: int = 1
+    premium_daily_super_like_limit: int = 5
     match_common_interest_weight: float = 0.6
     match_distance_weight: float = 0.4
     match_max_distance_km: float = 50.0
@@ -36,6 +48,10 @@ class Settings(BaseSettings):
         "boardgames",
         "football",
         "party",
+        "theatre",
+        "art",
+        "workshop",
+        "hobby",
         "other",
     ]
 

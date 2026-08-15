@@ -21,4 +21,9 @@ def configure_logging() -> None:
     settings = get_settings()
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
-    logging.basicConfig(level=settings.log_level, handlers=[handler], force=True)
+    
+    # Enable file logging for administrative log viewer
+    file_handler = logging.FileHandler("app.log", encoding="utf-8")
+    file_handler.setFormatter(JsonFormatter())
+    
+    logging.basicConfig(level=settings.log_level, handlers=[handler, file_handler], force=True)

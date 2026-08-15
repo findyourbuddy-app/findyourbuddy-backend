@@ -22,6 +22,7 @@ from app.routers import (
     messages,
     notifications,
     safety,
+    subscriptions,
     swipes,
     users,
 )
@@ -67,6 +68,7 @@ app.include_router(notifications.router)
 app.include_router(safety.router)
 app.include_router(bookmarks.router)
 app.include_router(admin.router)
+app.include_router(subscriptions.router)
 app.include_router(internal.router)
 
 app.mount(

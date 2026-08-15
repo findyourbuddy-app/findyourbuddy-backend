@@ -4,9 +4,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.notifications import get_notification_sender
 from app.database import SessionLocal
 from app.services.auth_service import delete_expired_reset_tokens
 from app.services.event_service import delete_expired_events
+from app.services.match_feedback_service import send_pending_feedback_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +22,20 @@ def run_cleanup_jobs(db: Session | None = None) -> dict[str, int]:
     try:
         deleted_events = delete_expired_events(session, settings.event_retention_days)
         deleted_tokens = delete_expired_reset_tokens(session)
+        feedback_notifications_sent = send_pending_feedback_notifications(
+            session, get_notification_sender(session)
+        )
         logger.info(
-            "cleanup job ran deleted_events=%s deleted_tokens=%s",
+            "cleanup job ran deleted_events=%s deleted_tokens=%s feedback_notifications_sent=%s",
             deleted_events,
             deleted_tokens,
+            feedback_notifications_sent,
         )
-        return {"deleted_events": deleted_events, "deleted_tokens": deleted_tokens}
+        return {
+            "deleted_events": deleted_events,
+            "deleted_tokens": deleted_tokens,
+            "feedback_notifications_sent": feedback_notifications_sent,
+        }
     finally:
         if owns_session:
             session.close()

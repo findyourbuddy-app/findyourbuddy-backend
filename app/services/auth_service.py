@@ -1,4 +1,6 @@
 import logging
+import secrets
+import string
 from datetime import datetime
 
 from sqlalchemy import or_
@@ -10,6 +12,9 @@ from app.models.user import User
 from app.schemas.user import UserCreate
 
 logger = logging.getLogger(__name__)
+
+REFERRAL_BONUS_SWIPES = 5
+_REFERRAL_CODE_ALPHABET = string.ascii_uppercase + string.digits
 
 
 class EmailAlreadyRegisteredError(Exception):
@@ -24,20 +29,38 @@ class InvalidOrExpiredResetTokenError(Exception):
     pass
 
 
+def _generate_referral_code(db: Session) -> str:
+    while True:
+        code = "".join(secrets.choice(_REFERRAL_CODE_ALPHABET) for _ in range(7))
+        if db.query(User).filter(User.referral_code == code).first() is None:
+            return code
+
+
 def register_user(db: Session, data: UserCreate) -> User:
     if db.query(User).filter(User.email == data.email).first() is not None:
         raise EmailAlreadyRegisteredError(data.email)
+
+    inviter: User | None = None
+    if data.referral_code:
+        inviter = (
+            db.query(User).filter(User.referral_code == data.referral_code.strip().upper()).first()
+        )
 
     user = User(
         email=data.email,
         hashed_password=hash_password(data.password),
         display_name=data.display_name,
         accepted_terms_at=datetime.utcnow(),
+        referral_code=_generate_referral_code(db),
+        referred_by_id=inviter.id if inviter is not None else None,
+        bonus_swipe_credits=REFERRAL_BONUS_SWIPES if inviter is not None else 0,
     )
     db.add(user)
+    if inviter is not None:
+        inviter.bonus_swipe_credits += REFERRAL_BONUS_SWIPES
     db.commit()
     db.refresh(user)
-    logger.info("user registered user_id=%s", user.id)
+    logger.info("user registered user_id=%s referred_by=%s", user.id, user.referred_by_id)
     return user
 
 

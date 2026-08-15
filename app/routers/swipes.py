@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user
+from app.core.deps import get_current_premium_user, get_current_user
 from app.core.notifications import NotificationSender, get_notification_sender
 from app.database import get_db
 from app.models.swipe import SwipeDirection
@@ -12,6 +12,7 @@ from app.services.matching_service import try_create_match
 from app.services.notification_service import notify_match_created
 from app.services.swipe_service import (
     BlockedUserError,
+    DailySuperLikeLimitExceededError,
     DailySwipeLimitExceededError,
     DuplicateSwipeError,
     list_incoming_likes,
@@ -36,6 +37,11 @@ def create_swipe(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Daily swipe limit reached",
         ) from exc
+    except DailySuperLikeLimitExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Daily super like limit reached",
+        ) from exc
     except DuplicateSwipeError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -49,7 +55,7 @@ def create_swipe(
 
     match_id: int | None = None
     matched_user: UserPublic | None = None
-    if swipe.direction == SwipeDirection.LIKE:
+    if swipe.direction in (SwipeDirection.LIKE, SwipeDirection.SUPER_LIKE):
         match = try_create_match(db, current_user.id, data.target_id, data.event_id)
         if match is not None:
             notify_match_created(db, notification_sender, match)
@@ -80,10 +86,16 @@ def get_swipe_candidates(
     )
 
 
-@router.get("/likes-received", response_model=list[UserRead])
+from pydantic import BaseModel
+
+class LikerRead(BaseModel):
+    user: UserRead
+    event_id: int
+
+@router.get("/likes-received", response_model=list[LikerRead])
 def get_incoming_likes(
-    event_id: int,
+    event_id: int | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[User]:
+) -> list[dict]:
     return list_incoming_likes(db, event_id=event_id, user_id=current_user.id)

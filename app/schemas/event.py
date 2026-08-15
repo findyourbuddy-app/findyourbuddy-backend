@@ -30,3 +30,4 @@ class EventRead(BaseModel):
     source_url: str | None
     image_url: str | None
     created_at: datetime
+    attendee_count: int = 0

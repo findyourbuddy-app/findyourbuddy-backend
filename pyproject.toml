@@ -21,6 +21,8 @@ dependencies = [
     "sentry-sdk[fastapi]==2.19.2",
     "slowapi==0.1.9",
     "sqlalchemy==2.0.36",
+    "redis==5.2.1",
+    "iyzipay",
     "uvicorn[standard]==0.34.0",
 ]
 

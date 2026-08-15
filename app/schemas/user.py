@@ -11,6 +11,7 @@ class UserPublic(BaseModel):
     id: int
     display_name: str
     photo_url: str | None = None
+    trust_score: int = 0
 
 
 class UserCreate(BaseModel):
@@ -18,6 +19,7 @@ class UserCreate(BaseModel):
     password: str
     display_name: str
     accepted_terms: bool
+    referral_code: str | None = None
 
     @field_validator("accepted_terms")
     @classmethod
@@ -42,6 +44,9 @@ class UserRead(BaseModel):
     photo_url: str | None = None
     accepted_terms_at: datetime | None = None
     photos: list[UserPhotoRead] = []
+    trust_score: int = 0
+    referral_code: str
+    bonus_swipe_credits: int = 0
 
 
 class UserUpdate(BaseModel):
