@@ -16,7 +16,13 @@ def _birth_date_for_age(age: int) -> date:
 def test_update_profile_applies_only_provided_fields(db_session: Session) -> None:
     user = register_user(
         db_session,
-        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
+        UserCreate(
+            email="ada@example.com",
+            password="s3cret-pass",
+            display_name="Ada",
+            accepted_terms=True,
+            phone_number="5000000001",
+        ),
     )
 
     updated = update_profile(
@@ -33,7 +39,13 @@ def test_update_profile_applies_only_provided_fields(db_session: Session) -> Non
 def test_update_profile_ignores_unset_fields(db_session: Session) -> None:
     user = register_user(
         db_session,
-        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
+        UserCreate(
+            email="ada@example.com",
+            password="s3cret-pass",
+            display_name="Ada",
+            accepted_terms=True,
+            phone_number="5000000001",
+        ),
     )
     update_profile(db_session, user, UserUpdate(bio="Loves trails"))
 
@@ -46,7 +58,13 @@ def test_update_profile_ignores_unset_fields(db_session: Session) -> None:
 def test_delete_account_deactivates_and_scrubs_pii(db_session: Session) -> None:
     user = register_user(
         db_session,
-        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
+        UserCreate(
+            email="ada@example.com",
+            password="s3cret-pass",
+            display_name="Ada",
+            accepted_terms=True,
+            phone_number="5000000001",
+        ),
     )
     update_profile(db_session, user, UserUpdate(bio="Loves trails", interests=["hiking"]))
 
@@ -62,7 +80,13 @@ def test_delete_account_deactivates_and_scrubs_pii(db_session: Session) -> None:
 def test_delete_account_prevents_future_login(db_session: Session) -> None:
     user = register_user(
         db_session,
-        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
+        UserCreate(
+            email="ada@example.com",
+            password="s3cret-pass",
+            display_name="Ada",
+            accepted_terms=True,
+            phone_number="5000000001",
+        ),
     )
 
     delete_account(db_session, user)
@@ -74,13 +98,25 @@ def test_delete_account_prevents_future_login(db_session: Session) -> None:
 def test_delete_account_frees_email_for_reuse(db_session: Session) -> None:
     user = register_user(
         db_session,
-        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
+        UserCreate(
+            email="ada@example.com",
+            password="s3cret-pass",
+            display_name="Ada",
+            accepted_terms=True,
+            phone_number="5000000001",
+        ),
     )
     delete_account(db_session, user)
 
     new_user = register_user(
         db_session,
-        UserCreate(email="ada@example.com", password="another-pass", display_name="Ada2", accepted_terms=True),
+        UserCreate(
+            email="ada@example.com",
+            password="another-pass",
+            display_name="Ada2",
+            accepted_terms=True,
+            phone_number="5000000002",
+        ),
     )
 
     assert new_user.id != user.id

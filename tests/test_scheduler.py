@@ -13,7 +13,11 @@ def test_run_cleanup_jobs_reports_deleted_counts(db_session: Session) -> None:
     user = register_user(
         db_session,
         UserCreate(
-            email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True
+            email="ada@example.com",
+            password="s3cret-pass",
+            display_name="Ada",
+            accepted_terms=True,
+            phone_number="5000000001",
         ),
     )
     create_event(

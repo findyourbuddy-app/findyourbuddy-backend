@@ -24,3 +24,7 @@ class PasswordResetConfirm(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+
+class PhoneVerificationConfirm(BaseModel):
+    code: str

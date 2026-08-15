@@ -16,6 +16,7 @@ def test_login_returns_429_when_rate_limit_exceeded(client: TestClient, monkeypa
                 "password": "s3cret-pass",
                 "display_name": "Ada",
                 "accepted_terms": True,
+                "phone_number": "5000000001",
             },
         )
 

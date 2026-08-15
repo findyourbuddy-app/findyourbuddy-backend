@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.geo import haversine_km
+from app.models.event_attendance import EventAttendance
 from app.models.swipe import Swipe, SwipeDirection
 from app.models.user import User
 from app.schemas.swipe import SwipeCreate
+from app.services.event_service import join_event
 from app.services.safety_service import blocked_user_ids, is_blocked
 from app.services.subscription_service import is_premium, premium_user_ids
 
@@ -35,6 +37,21 @@ def _swipes_made_today(db: Session, swiper_id: int, direction: SwipeDirection | 
     return query.count()
 
 
+def _likes_made_today(db: Session, swiper_id: int) -> int:
+    """Passes are free and unlimited; only LIKE/SUPER_LIKE count against the
+    daily allowance (the super-like sub-quota is enforced separately)."""
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return (
+        db.query(Swipe)
+        .filter(
+            Swipe.swiper_id == swiper_id,
+            Swipe.created_at >= today_start,
+            Swipe.direction.in_([SwipeDirection.LIKE, SwipeDirection.SUPER_LIKE]),
+        )
+        .count()
+    )
+
+
 def _already_swiped(db: Session, swiper_id: int, target_id: int, event_id: int) -> bool:
     existing = (
         db.query(Swipe)
@@ -54,7 +71,7 @@ def get_swipe_quota(db: Session, swiper_id: int) -> dict:
     super_like_limit = settings.premium_daily_super_like_limit if premium else settings.daily_super_like_limit
     return {
         "is_premium": premium,
-        "swipes_used_today": _swipes_made_today(db, swiper_id),
+        "swipes_used_today": _likes_made_today(db, swiper_id),
         "swipe_limit": None if premium else settings.daily_swipe_limit,
         "super_likes_used_today": _swipes_made_today(db, swiper_id, SwipeDirection.SUPER_LIKE),
         "super_like_limit": super_like_limit,
@@ -65,7 +82,11 @@ def record_swipe(db: Session, swiper_id: int, data: SwipeCreate) -> Swipe:
     premium = is_premium(db, swiper_id)
     settings = get_settings()
 
-    if not premium and _swipes_made_today(db, swiper_id) >= settings.daily_swipe_limit:
+    if (
+        data.direction != SwipeDirection.PASS
+        and not premium
+        and _likes_made_today(db, swiper_id) >= settings.daily_swipe_limit
+    ):
         raise DailySwipeLimitExceededError(swiper_id)
 
     if data.direction == SwipeDirection.SUPER_LIKE:
@@ -80,6 +101,8 @@ def record_swipe(db: Session, swiper_id: int, data: SwipeCreate) -> Swipe:
 
     if _already_swiped(db, swiper_id, data.target_id, data.event_id):
         raise DuplicateSwipeError(data.target_id)
+
+    join_event(db, data.event_id, swiper_id)
 
     swipe = Swipe(swiper_id=swiper_id, **data.model_dump())
     db.add(swipe)
@@ -127,8 +150,12 @@ def list_swipe_candidates(
     already_swiped_target_ids = db.query(Swipe.target_id).filter(
         Swipe.swiper_id == swiper_id, Swipe.event_id == event_id
     )
+    attending_user_ids = db.query(EventAttendance.user_id).filter(
+        EventAttendance.event_id == event_id
+    )
     excluded_ids = {swiper_id, *blocked_user_ids(db, swiper_id)}
     query = db.query(User).filter(
+        User.id.in_(attending_user_ids),
         User.id.notin_(already_swiped_target_ids),
         User.id.notin_(excluded_ids),
         User.is_active.is_(True),
@@ -152,14 +179,16 @@ def list_swipe_candidates(
             ]
 
     boosted_ids = premium_user_ids(db, [user.id for user in candidates])
+    now = datetime.utcnow()
     
-    # Sort candidates: Premium boosted users first, then sub-sorted by recommendation score (descending)
+    # Sort candidates: Active Spotlight Boost users first, then Premium users, then sub-sorted by recommendation score (descending)
     from app.services.recommendation_service import RecommendationService
     
     candidates.sort(
         key=lambda user: (
-            user.id not in boosted_ids,  # False (0) for boosted, True (1) for non-boosted -> boosted first
-            -RecommendationService.score_candidate(swiper, user)  # Negative score so highest is first
+            not (user.boosted_until is not None and user.boosted_until > now),  # Active Spotlight Boost users first
+            user.id not in boosted_ids,  # Premium users next
+            -RecommendationService.score_candidate(swiper, user)  # Recommendation score
         )
     )
 

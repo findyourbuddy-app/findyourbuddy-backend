@@ -35,13 +35,26 @@ def _get_match_for_participant(db: Session, match_id: int, user_id: int) -> Matc
     return match
 
 
-def send_message(db: Session, match_id: int, sender_id: int, content: str) -> Message:
+def send_message(
+    db: Session,
+    match_id: int,
+    sender_id: int,
+    content: str,
+    message_type: str = "text",
+    media_url: str | None = None,
+) -> Message:
     _get_match_for_participant(db, match_id, sender_id)
 
     if contains_banned_words(content):
         raise MessageBlockedError(content)
 
-    message = Message(match_id=match_id, sender_id=sender_id, content=content)
+    message = Message(
+        match_id=match_id,
+        sender_id=sender_id,
+        content=content,
+        message_type=message_type,
+        media_url=media_url,
+    )
     db.add(message)
     db.commit()
     db.refresh(message)

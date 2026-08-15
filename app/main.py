@@ -16,6 +16,7 @@ from app.routers import (
     auth,
     bookmarks,
     events,
+    geocoding,
     health,
     internal,
     matches,
@@ -70,6 +71,7 @@ app.include_router(bookmarks.router)
 app.include_router(admin.router)
 app.include_router(subscriptions.router)
 app.include_router(internal.router)
+app.include_router(geocoding.router)
 
 app.mount(
     settings.media_base_url,

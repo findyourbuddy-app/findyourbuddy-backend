@@ -122,7 +122,10 @@ def list_matches_for_user(
     blocked_ids = set(blocked_user_ids(db, user_id))
     matches = (
         db.query(Match)
-        .filter(or_(Match.user_a_id == user_id, Match.user_b_id == user_id))
+        .filter(
+            or_(Match.user_a_id == user_id, Match.user_b_id == user_id),
+            Match.is_active.is_(True),
+        )
         .order_by(Match.created_at.desc())
         .all()
     )

@@ -9,7 +9,20 @@ from app.schemas.swipe import SwipeCreate
 from app.schemas.user import UserCreate
 from app.services.auth_service import register_user
 from app.services.bookmark_service import create_bookmark
-from app.services.event_service import create_event, delete_expired_events, list_events
+import pytest
+
+from app.services.event_service import (
+    DailyEventCreationLimitExceededError,
+    EventCheckInOutsideWindowError,
+    EventCheckInTooFarError,
+    check_in_to_event,
+    create_event,
+    delete_expired_events,
+    is_checked_in,
+    is_ticket_verified,
+    list_events,
+    submit_ticket,
+)
 from app.services.matching_service import try_create_match
 from app.services.swipe_service import record_swipe
 
@@ -17,7 +30,7 @@ from app.services.swipe_service import record_swipe
 def _create_user(db_session: Session, email: str = "ada@example.com") -> int:
     user = register_user(
         db_session,
-        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True),
+        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True, phone_number=f"5{abs(hash(email)) % 10**9:09d}"),
     )
     return user.id
 
@@ -70,6 +83,7 @@ def test_list_events_respects_skip_and_limit(db_session: Session) -> None:
             db_session,
             _event_data(title=f"Event {i}", starts_at=datetime.utcnow() + timedelta(days=i + 1)),
             creator_id,
+            is_premium=True,
         )
 
     results = list_events(db_session, skip=1, limit=2)
@@ -157,3 +171,95 @@ def test_delete_expired_events_preserves_events_with_a_match(db_session: Session
 
     assert deleted_count == 0
     assert event.id in {e.id for e in list_events(db_session, upcoming_only=False)}
+
+
+def test_create_event_enforces_daily_limit_for_free_users(db_session: Session) -> None:
+    creator_id = _create_user(db_session)
+    create_event(db_session, _event_data(title="One"), creator_id)
+    create_event(db_session, _event_data(title="Two"), creator_id)
+
+    with pytest.raises(DailyEventCreationLimitExceededError):
+        create_event(db_session, _event_data(title="Three"), creator_id)
+
+
+def test_create_event_daily_limit_does_not_apply_to_premium(db_session: Session) -> None:
+    creator_id = _create_user(db_session)
+    for i in range(4):
+        create_event(db_session, _event_data(title=f"Event {i}"), creator_id, is_premium=True)
+
+
+def test_check_in_succeeds_near_event_during_window(db_session: Session) -> None:
+    creator_id = _create_user(db_session, "creator@example.com")
+    attendee_id = _create_user(db_session, "attendee@example.com")
+    event = create_event(
+        db_session,
+        _event_data(
+            title="Nearby now",
+            latitude=41.0,
+            longitude=29.0,
+            starts_at=datetime.utcnow() + timedelta(minutes=5),
+        ),
+        creator_id,
+    )
+
+    check_in_to_event(db_session, event.id, attendee_id, latitude=41.001, longitude=29.001)
+
+    assert is_checked_in(db_session, event.id, attendee_id) is True
+
+
+def test_check_in_rejects_too_far_from_event(db_session: Session) -> None:
+    creator_id = _create_user(db_session, "creator@example.com")
+    attendee_id = _create_user(db_session, "attendee@example.com")
+    event = create_event(
+        db_session,
+        _event_data(
+            title="Far away",
+            latitude=41.0,
+            longitude=29.0,
+            starts_at=datetime.utcnow() + timedelta(minutes=5),
+        ),
+        creator_id,
+    )
+
+    with pytest.raises(EventCheckInTooFarError):
+        check_in_to_event(db_session, event.id, attendee_id, latitude=48.85, longitude=2.35)
+
+    assert is_checked_in(db_session, event.id, attendee_id) is False
+
+
+def test_check_in_rejects_outside_time_window(db_session: Session) -> None:
+    creator_id = _create_user(db_session, "creator@example.com")
+    attendee_id = _create_user(db_session, "attendee@example.com")
+    event = create_event(
+        db_session,
+        _event_data(
+            title="Not yet",
+            latitude=41.0,
+            longitude=29.0,
+            starts_at=datetime.utcnow() + timedelta(days=3),
+        ),
+        creator_id,
+    )
+
+    with pytest.raises(EventCheckInOutsideWindowError):
+        check_in_to_event(db_session, event.id, attendee_id, latitude=41.0, longitude=29.0)
+
+
+def test_submit_ticket_with_decoded_code_marks_verified(db_session: Session) -> None:
+    creator_id = _create_user(db_session, "creator@example.com")
+    attendee_id = _create_user(db_session, "attendee@example.com")
+    event = create_event(db_session, _event_data(title="Paid gig"), creator_id)
+
+    submit_ticket(db_session, event.id, attendee_id, "http://media/ticket.jpg", "TICKET-123")
+
+    assert is_ticket_verified(db_session, event.id, attendee_id) is True
+
+
+def test_submit_ticket_without_decoded_code_stays_unverified(db_session: Session) -> None:
+    creator_id = _create_user(db_session, "creator@example.com")
+    attendee_id = _create_user(db_session, "attendee@example.com")
+    event = create_event(db_session, _event_data(title="Paid gig"), creator_id)
+
+    submit_ticket(db_session, event.id, attendee_id, "http://media/ticket.jpg", None)
+
+    assert is_ticket_verified(db_session, event.id, attendee_id) is False

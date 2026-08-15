@@ -33,9 +33,15 @@ def delete_account(db: Session, user: User) -> None:
     part of are left intact for the other side's history."""
     user.is_active = False
     user.email = f"deleted-user-{user.id}-{secrets.token_hex(4)}@findyourbuddy.invalid"
+    user.phone_number = f"del-{secrets.token_hex(8)}"
     user.hashed_password = hash_password(secrets.token_urlsafe(32))
     user.display_name = "Silinmiş Kullanıcı"
     user.bio = None
+    user.university = None
+    user.zodiac_sign = None
+    user.looking_for = None
+    user.about_me_prompt = None
+    user.verification_status = "unverified"
     user.interests = []
     user.latitude = None
     user.longitude = None

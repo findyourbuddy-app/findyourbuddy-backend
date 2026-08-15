@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
 from app.models.password_reset_token import PasswordResetToken
+from app.models.phone_verification_code import PhoneVerificationCode
 from app.models.user import User
 from app.schemas.user import UserCreate
 
@@ -18,6 +19,9 @@ _REFERRAL_CODE_ALPHABET = string.ascii_uppercase + string.digits
 
 
 class EmailAlreadyRegisteredError(Exception):
+    pass
+
+class PhoneNumberAlreadyRegisteredError(Exception):
     pass
 
 
@@ -33,6 +37,14 @@ class IncorrectCurrentPasswordError(Exception):
     pass
 
 
+class InvalidOrExpiredPhoneCodeError(Exception):
+    pass
+
+
+class PhoneAlreadyVerifiedError(Exception):
+    pass
+
+
 def _generate_referral_code(db: Session) -> str:
     while True:
         code = "".join(secrets.choice(_REFERRAL_CODE_ALPHABET) for _ in range(7))
@@ -43,6 +55,8 @@ def _generate_referral_code(db: Session) -> str:
 def register_user(db: Session, data: UserCreate) -> User:
     if db.query(User).filter(User.email == data.email).first() is not None:
         raise EmailAlreadyRegisteredError(data.email)
+    if db.query(User).filter(User.phone_number == data.phone_number).first() is not None:
+        raise PhoneNumberAlreadyRegisteredError(data.phone_number)
 
     inviter: User | None = None
     if data.referral_code:
@@ -58,6 +72,8 @@ def register_user(db: Session, data: UserCreate) -> User:
         referral_code=_generate_referral_code(db),
         referred_by_id=inviter.id if inviter is not None else None,
         bonus_swipe_credits=REFERRAL_BONUS_SWIPES if inviter is not None else 0,
+        phone_number=data.phone_number,
+        phone_verified=False,
     )
     db.add(user)
     if inviter is not None:
@@ -66,6 +82,37 @@ def register_user(db: Session, data: UserCreate) -> User:
     db.refresh(user)
     logger.info("user registered user_id=%s referred_by=%s", user.id, user.referred_by_id)
     return user
+
+
+def create_phone_verification_code(db: Session, user: User) -> str:
+    code = PhoneVerificationCode(user_id=user.id)
+    db.add(code)
+    db.commit()
+    db.refresh(code)
+    return code.code
+
+
+def verify_phone_code(db: Session, user: User, code: str) -> None:
+    if user.phone_verified:
+        raise PhoneAlreadyVerifiedError(user.id)
+
+    record = (
+        db.query(PhoneVerificationCode)
+        .filter(
+            PhoneVerificationCode.user_id == user.id,
+            PhoneVerificationCode.code == code,
+            PhoneVerificationCode.consumed_at.is_(None),
+            PhoneVerificationCode.expires_at >= datetime.utcnow(),
+        )
+        .order_by(PhoneVerificationCode.created_at.desc())
+        .first()
+    )
+    if record is None:
+        raise InvalidOrExpiredPhoneCodeError(user.id)
+
+    record.consumed_at = datetime.utcnow()
+    user.phone_verified = True
+    db.commit()
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User:

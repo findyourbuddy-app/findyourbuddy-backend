@@ -73,6 +73,7 @@ def auth_headers(client: TestClient) -> dict[str, str]:
             "password": "s3cret-pass",
             "display_name": "Ada",
             "accepted_terms": True,
+            "phone_number": "5000000001",
         },
     )
     response = client.post(

@@ -62,6 +62,14 @@ def create_swipe(
             notify_match_created(db, notification_sender, match)
             match_id = match.id
             matched_user = UserPublic.model_validate(db.get(User, data.target_id))
+        else:
+            from app.models.notification import Notification
+            db.add(Notification(
+                user_id=data.target_id,
+                title="Yeni Beğeni!",
+                body="Biri seni kanka olarak beğendi."
+            ))
+            db.commit()
 
     return SwipeRead.model_validate(swipe).model_copy(
         update={"match_id": match_id, "matched_user": matched_user}

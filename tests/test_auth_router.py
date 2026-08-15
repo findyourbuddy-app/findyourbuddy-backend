@@ -12,6 +12,7 @@ def _register(client: TestClient) -> None:
             "password": "s3cret-pass",
             "display_name": "Ada",
             "accepted_terms": True,
+            "phone_number": "5000000001",
         },
     )
     assert response.status_code == 201
@@ -25,6 +26,7 @@ def test_register_returns_created_user(client: TestClient) -> None:
             "password": "s3cret-pass",
             "display_name": "Ada",
             "accepted_terms": True,
+            "phone_number": "5000000001",
         },
     )
 
@@ -45,10 +47,75 @@ def test_register_rejects_duplicate_email(client: TestClient) -> None:
             "password": "other-pass",
             "display_name": "Ada2",
             "accepted_terms": True,
+            "phone_number": "5000000002",
         },
     )
 
     assert response.status_code == 409
+
+
+def test_register_rejects_duplicate_phone_number(client: TestClient) -> None:
+    _register(client)
+
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "other@example.com",
+            "password": "other-pass",
+            "display_name": "Other",
+            "accepted_terms": True,
+            "phone_number": "5000000001",
+        },
+    )
+
+    assert response.status_code == 409
+
+
+def test_register_sets_phone_unverified(client: TestClient) -> None:
+    response = client.post(
+        "/auth/register",
+        json={
+            "email": "ada@example.com",
+            "password": "s3cret-pass",
+            "display_name": "Ada",
+            "accepted_terms": True,
+            "phone_number": "5000000001",
+        },
+    )
+
+    assert response.json()["phone_verified"] is False
+
+
+def test_verify_phone_with_correct_code_succeeds(client: TestClient, caplog) -> None:
+    caplog.set_level(logging.INFO, logger="app.core.sms")
+    _register(client)
+    login = client.post("/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    match = re.search(r"code=(\d{6})", caplog.text)
+    assert match is not None
+    code = match.group(1)
+
+    response = client.post("/auth/phone/verify", headers=headers, json={"code": code})
+
+    assert response.status_code == 204
+    assert client.get("/users/me", headers=headers).json()["phone_verified"] is True
+
+
+def test_verify_phone_with_wrong_code_fails(client: TestClient) -> None:
+    _register(client)
+    login = client.post("/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    response = client.post("/auth/phone/verify", headers=headers, json={"code": "000000"})
+
+    assert response.status_code == 400
+
+
+def test_resend_phone_code_requires_authentication(client: TestClient) -> None:
+    response = client.post("/auth/phone/resend")
+
+    assert response.status_code == 401
 
 
 def test_login_returns_access_token(client: TestClient) -> None:

@@ -298,3 +298,50 @@ def test_unregister_device_token_returns_204(
     )
 
     assert response.status_code == 204
+
+
+def test_boost_user_without_credits_returns_403(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    response = client.post("/users/me/boost", headers=auth_headers)
+    assert response.status_code == 403
+
+
+def test_purchase_items_credits_balance(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    # Purchase 2 boosts
+    response = client.post(
+        "/users/me/purchase",
+        headers=auth_headers,
+        json={"item_type": "boost", "quantity": 2},
+    )
+    assert response.status_code == 200
+    assert response.json()["boosts_balance"] == 2
+
+    # Purchase 5 extra super likes
+    response = client.post(
+        "/users/me/purchase",
+        headers=auth_headers,
+        json={"item_type": "super_likes", "quantity": 5},
+    )
+    assert response.status_code == 200
+    assert response.json()["extra_super_likes"] == 5
+
+
+def test_boost_user_with_credits_succeeds(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    # First buy a boost
+    client.post(
+        "/users/me/purchase",
+        headers=auth_headers,
+        json={"item_type": "boost", "quantity": 1},
+    )
+
+    # Boost profile
+    response = client.post("/users/me/boost", headers=auth_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["boosts_balance"] == 0
+    assert body["boosted_until"] is not None

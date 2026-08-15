@@ -11,7 +11,7 @@ from app.schemas.swipe import SwipeCreate
 from app.schemas.user import UserCreate
 from app.services.auth_service import register_user
 from app.schemas.user import UserUpdate
-from app.services.event_service import create_event
+from app.services.event_service import create_event, join_event
 from app.services.safety_service import block_user
 from app.services.subscription_service import grant_premium
 from app.services.swipe_service import (
@@ -34,7 +34,7 @@ def _birth_date_for_age(age: int) -> date:
 def _register(db_session: Session, email: str) -> int:
     user = register_user(
         db_session,
-        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True),
+        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True, phone_number=f"5{abs(hash(email)) % 10**9:09d}"),
     )
     return user.id
 
@@ -245,6 +245,8 @@ def test_list_swipe_candidates_excludes_self_and_already_swiped(db_session: Sess
     already_swiped_id = _register(db_session, "swiped@example.com")
     remaining_id = _register(db_session, "remaining@example.com")
     event_id = _create_event(db_session, swiper_id)
+    join_event(db_session, event_id, already_swiped_id)
+    join_event(db_session, event_id, remaining_id)
 
     record_swipe(
         db_session,
@@ -296,6 +298,8 @@ def test_list_swipe_candidates_excludes_blocked_users(db_session: Session) -> No
     blocked_id = _register(db_session, "blocked@example.com")
     remaining_id = _register(db_session, "remaining@example.com")
     event_id = _create_event(db_session, swiper_id)
+    join_event(db_session, event_id, blocked_id)
+    join_event(db_session, event_id, remaining_id)
     block_user(db_session, swiper_id, blocked_id)
 
     candidate_ids = {
@@ -379,6 +383,9 @@ def test_list_swipe_candidates_filters_by_age_range(db_session: Session) -> None
     old_id = _register(db_session, "old@example.com")
     unset_id = _register(db_session, "unset@example.com")
     event_id = _create_event(db_session, swiper_id)
+    join_event(db_session, event_id, young_id)
+    join_event(db_session, event_id, old_id)
+    join_event(db_session, event_id, unset_id)
     update_profile(db_session, db_session.get(User, young_id), UserUpdate(date_of_birth=_birth_date_for_age(20)))
     update_profile(db_session, db_session.get(User, old_id), UserUpdate(date_of_birth=_birth_date_for_age(45)))
 
@@ -399,6 +406,8 @@ def test_list_swipe_candidates_ignores_age_filter_for_non_premium(db_session: Se
     young_id = _register(db_session, "young@example.com")
     old_id = _register(db_session, "old@example.com")
     event_id = _create_event(db_session, swiper_id)
+    join_event(db_session, event_id, young_id)
+    join_event(db_session, event_id, old_id)
     update_profile(db_session, db_session.get(User, young_id), UserUpdate(date_of_birth=_birth_date_for_age(20)))
     update_profile(db_session, db_session.get(User, old_id), UserUpdate(date_of_birth=_birth_date_for_age(45)))
 
@@ -418,6 +427,8 @@ def test_list_swipe_candidates_applies_age_filter_for_premium(db_session: Sessio
     young_id = _register(db_session, "young@example.com")
     old_id = _register(db_session, "old@example.com")
     event_id = _create_event(db_session, swiper_id)
+    join_event(db_session, event_id, young_id)
+    join_event(db_session, event_id, old_id)
     update_profile(db_session, db_session.get(User, young_id), UserUpdate(date_of_birth=_birth_date_for_age(20)))
     update_profile(db_session, db_session.get(User, old_id), UserUpdate(date_of_birth=_birth_date_for_age(45)))
 
@@ -436,6 +447,8 @@ def test_list_swipe_candidates_boosts_premium_users_first(db_session: Session) -
     regular_id = _register(db_session, "regular@example.com")
     boosted_id = _register(db_session, "boosted@example.com")
     event_id = _create_event(db_session, swiper_id)
+    join_event(db_session, event_id, regular_id)
+    join_event(db_session, event_id, boosted_id)
     grant_premium(db_session, boosted_id)
 
     candidate_ids = [
@@ -452,6 +465,8 @@ def test_list_swipe_candidates_filters_by_distance(db_session: Session) -> None:
     nearby_id = _register(db_session, "nearby@example.com")
     far_id = _register(db_session, "far@example.com")
     event_id = _create_event(db_session, swiper_id)
+    join_event(db_session, event_id, nearby_id)
+    join_event(db_session, event_id, far_id)
     # Istanbul-ish coordinates for swiper + nearby, and a far-away point for "far".
     update_profile(
         db_session, db_session.get(User, swiper_id), UserUpdate(latitude=41.0, longitude=29.0)
@@ -479,6 +494,8 @@ def test_list_swipe_candidates_orders_by_recommendation_score(db_session: Sessio
     better_match_id = _register(db_session, "better@example.com")
     worse_match_id = _register(db_session, "worse@example.com")
     event_id = _create_event(db_session, swiper_id)
+    join_event(db_session, event_id, better_match_id)
+    join_event(db_session, event_id, worse_match_id)
 
     update_profile(
         db_session,

@@ -26,7 +26,7 @@ from app.services.swipe_service import record_swipe
 def _register(db_session: Session, email: str) -> int:
     return register_user(
         db_session,
-        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True),
+        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True, phone_number=f"5{abs(hash(email)) % 10**9:09d}"),
     ).id
 
 

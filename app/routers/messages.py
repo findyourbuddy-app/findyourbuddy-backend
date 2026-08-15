@@ -53,7 +53,14 @@ def post_message(
     notification_sender: NotificationSender = Depends(get_notification_sender),
 ) -> Message:
     try:
-        message = send_message(db, match_id, current_user.id, data.content)
+        message = send_message(
+            db,
+            match_id,
+            current_user.id,
+            data.content,
+            data.message_type,
+            data.media_url,
+        )
     except MatchNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Match not found"

@@ -9,7 +9,7 @@ from app.models.user import User
 def _register_and_login(client: TestClient, email: str) -> dict[str, str]:
     client.post(
         "/auth/register",
-        json={"email": email, "password": "s3cret-pass", "display_name": email, "accepted_terms": True},
+        json={"email": email, "password": "s3cret-pass", "display_name": email, "accepted_terms": True, "phone_number": f"5{abs(hash(email)) % 10**9:09d}"},
     )
     response = client.post("/auth/login", json={"email": email, "password": "s3cret-pass"})
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
@@ -125,6 +125,7 @@ def test_unblock_user_returns_204_and_restores_candidate_visibility(client: Test
     b_headers = _register_and_login(client, "b@example.com")
     b_id = client.get("/users/me", headers=b_headers).json()["id"]
     event_id = _create_event(client, a_headers)
+    client.post(f"/events/{event_id}/attend", headers=b_headers)
     client.post(f"/users/{b_id}/block", headers=a_headers)
 
     response = client.delete(f"/users/{b_id}/block", headers=a_headers)

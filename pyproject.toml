@@ -24,6 +24,8 @@ dependencies = [
     "redis==5.2.1",
     "iyzipay",
     "uvicorn[standard]==0.34.0",
+    "opencv-python-headless==4.10.0.84",
+    "numpy==2.2.1",
 ]
 
 [dependency-groups]

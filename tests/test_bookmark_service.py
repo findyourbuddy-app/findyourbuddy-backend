@@ -20,7 +20,7 @@ from app.services.event_service import create_event
 def _register(db_session: Session, email: str) -> int:
     return register_user(
         db_session,
-        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True),
+        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True, phone_number=f"5{abs(hash(email)) % 10**9:09d}"),
     ).id
 
 
@@ -36,6 +36,7 @@ def _create_event(db_session: Session, creator_id: int) -> int:
             starts_at=datetime.utcnow() + timedelta(days=1),
         ),
         creator_id,
+        is_premium=True,
     )
     return event.id
 

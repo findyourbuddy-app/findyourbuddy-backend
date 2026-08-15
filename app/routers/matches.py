@@ -62,3 +62,20 @@ def submit_match_feedback(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Event has not finished yet"
         ) from exc
+
+
+@router.delete("/{match_id}", status_code=status.HTTP_204_NO_CONTENT)
+def unmatch(
+    match_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    from app.models.match import Match
+    match = db.get(Match, match_id)
+    if match is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+    if current_user.id not in (match.user_a_id, match.user_b_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this match")
+    
+    match.is_active = False
+    db.commit()

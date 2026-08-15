@@ -20,14 +20,26 @@ from app.services.auth_service import (
 def _create_user(db_session: Session) -> None:
     register_user(
         db_session,
-        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
+        UserCreate(
+            email="ada@example.com",
+            password="s3cret-pass",
+            display_name="Ada",
+            accepted_terms=True,
+            phone_number="5000000001",
+        ),
     )
 
 
 def test_register_user_hashes_password(db_session: Session) -> None:
     user = register_user(
         db_session,
-        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
+        UserCreate(
+            email="ada@example.com",
+            password="s3cret-pass",
+            display_name="Ada",
+            accepted_terms=True,
+            phone_number="5000000001",
+        ),
     )
 
     assert user.id is not None
@@ -40,7 +52,13 @@ def test_register_user_rejects_duplicate_email(db_session: Session) -> None:
     with pytest.raises(EmailAlreadyRegisteredError):
         register_user(
             db_session,
-            UserCreate(email="ada@example.com", password="another-pass", display_name="Ada2", accepted_terms=True),
+            UserCreate(
+                email="ada@example.com",
+                password="another-pass",
+                display_name="Ada2",
+                accepted_terms=True,
+                phone_number="5000000002",
+            ),
         )
 
 

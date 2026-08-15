@@ -25,9 +25,10 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_sender: str = "noreply@findyourbuddy.com"
 
-    daily_swipe_limit: int = 50
+    daily_swipe_limit: int = 10
     daily_super_like_limit: int = 1
     premium_daily_super_like_limit: int = 5
+    daily_event_creation_limit: int = 2
     match_common_interest_weight: float = 0.6
     match_distance_weight: float = 0.4
     match_max_distance_km: float = 50.0
@@ -70,6 +71,8 @@ class Settings(BaseSettings):
     push_provider: str = "logging"
     expo_push_api_url: str = "https://exp.host/--/api/v2/push/send"
 
+    sms_provider: str = "logging"
+
     cors_allowed_origins: str = "*"
     log_level: str = "INFO"
 
@@ -78,6 +81,9 @@ class Settings(BaseSettings):
 
     event_retention_days: int = 30
     scheduler_interval_hours: float = 6.0
+
+    geocoding_base_url: str = "https://nominatim.openstreetmap.org"
+    geocoding_user_agent: str = "findyourbuddy-app/0.1 (contact@findyourbuddy.dev)"
 
 
 @lru_cache
