@@ -6,7 +6,7 @@ from app.core.notifications import NotificationSender, get_notification_sender
 from app.database import get_db
 from app.models.swipe import SwipeDirection
 from app.models.user import User
-from app.schemas.swipe import SwipeCreate, SwipeRead
+from app.schemas.swipe import SwipeCreate, SwipeQuota, SwipeRead
 from app.schemas.user import UserPublic, UserRead
 from app.services.matching_service import try_create_match
 from app.services.notification_service import notify_match_created
@@ -15,6 +15,7 @@ from app.services.swipe_service import (
     DailySuperLikeLimitExceededError,
     DailySwipeLimitExceededError,
     DuplicateSwipeError,
+    get_swipe_quota,
     list_incoming_likes,
     list_swipe_candidates,
     record_swipe,
@@ -65,6 +66,14 @@ def create_swipe(
     return SwipeRead.model_validate(swipe).model_copy(
         update={"match_id": match_id, "matched_user": matched_user}
     )
+
+
+@router.get("/quota", response_model=SwipeQuota)
+def get_quota(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    return get_swipe_quota(db, current_user.id)
 
 
 @router.get("/candidates", response_model=list[UserRead])

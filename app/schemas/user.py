@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
+from app.schemas import SafeEmail
 
 from app.schemas.user_photo import UserPhotoRead
 
@@ -15,7 +16,7 @@ class UserPublic(BaseModel):
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: SafeEmail
     password: str
     display_name: str
     accepted_terms: bool
@@ -33,16 +34,19 @@ class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    email: EmailStr
+    email: SafeEmail
     display_name: str
     is_active: bool
     age: int | None = None
+    date_of_birth: date | None = None
+    occupation: str | None = None
     bio: str | None = None
     interests: list[str] = []
     latitude: float | None = None
     longitude: float | None = None
     photo_url: str | None = None
     accepted_terms_at: datetime | None = None
+    created_at: datetime
     photos: list[UserPhotoRead] = []
     trust_score: int = 0
     referral_code: str
@@ -51,7 +55,8 @@ class UserRead(BaseModel):
 
 class UserUpdate(BaseModel):
     display_name: str | None = None
-    age: int | None = None
+    date_of_birth: date | None = None
+    occupation: str | None = None
     bio: str | None = None
     interests: list[str] | None = None
     latitude: float | None = None

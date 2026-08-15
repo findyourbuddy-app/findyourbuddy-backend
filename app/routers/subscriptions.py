@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Form, responses
 from sqlalchemy.orm import Session
@@ -91,15 +92,16 @@ def create_checkout_session(
     }
 
     try:
-        checkout_form_initialize = iyzipay.CheckoutFormInitialize().create(request_data, options)
-        status = getattr(checkout_form_initialize, "status", None) or checkout_form_initialize.get("status")
-        
-        if status == "success":
-            payment_url = getattr(checkout_form_initialize, "payment_page_url", None) or checkout_form_initialize.get("paymentPageUrl")
-            return {"checkout_url": payment_url}
-        else:
-            error_msg = getattr(checkout_form_initialize, "error_message", None) or checkout_form_initialize.get("errorMessage") or "Ödeme başlatılamadı."
-            raise HTTPException(status_code=400, detail=error_msg)
+        # iyzipay's create()/retrieve() return a raw, unread http.client.HTTPResponse --
+        # it must be read and JSON-decoded before any of the payload fields exist.
+        raw_response = iyzipay.CheckoutFormInitialize().create(request_data, options)
+        response = json.loads(raw_response.read().decode("utf-8"))
+
+        if response.get("status") == "success":
+            return {"checkout_url": response.get("paymentPageUrl")}
+        raise HTTPException(
+            status_code=400, detail=response.get("errorMessage") or "Ödeme başlatılamadı."
+        )
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
@@ -120,12 +122,13 @@ async def iyzico_callback(
     }
     
     try:
-        checkout_form = iyzipay.CheckoutForm().retrieve({'token': token}, options)
-        status = getattr(checkout_form, "status", None) or checkout_form.get("status")
-        payment_status = getattr(checkout_form, "payment_status", None) or checkout_form.get("paymentStatus")
-        
+        raw_response = iyzipay.CheckoutForm().retrieve({'token': token}, options)
+        checkout_form = json.loads(raw_response.read().decode("utf-8"))
+        status = checkout_form.get("status")
+        payment_status = checkout_form.get("paymentStatus")
+
         if status == "success" and payment_status == "SUCCESS":
-            conv_id = getattr(checkout_form, "conversation_id", None) or checkout_form.get("conversationId")
+            conv_id = checkout_form.get("conversationId")
             if conv_id and conv_id.startswith("sub_"):
                 parts = conv_id.split("_")
                 user_id = int(parts[1])
@@ -150,7 +153,7 @@ async def iyzico_callback(
                     </html>
                 """)
         
-        error_msg = getattr(checkout_form, "error_message", None) or checkout_form.get("errorMessage") or "Ödeme tamamlanamadı."
+        error_msg = checkout_form.get("errorMessage") or "Ödeme tamamlanamadı."
         return responses.HTMLResponse(content=f"""
             <html>
                 <head>

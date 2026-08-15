@@ -34,10 +34,17 @@ def test_read_current_user_returns_profile(
 def test_update_current_user_applies_changes(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
+    from datetime import date
+
+    birth_date = date.today().replace(year=date.today().year - 27)
     response = client.patch(
         "/users/me",
         headers=auth_headers,
-        json={"age": 27, "bio": "Loves trails", "interests": ["hiking"]},
+        json={
+            "date_of_birth": birth_date.isoformat(),
+            "bio": "Loves trails",
+            "interests": ["hiking"],
+        },
     )
 
     assert response.status_code == 200
@@ -54,6 +61,7 @@ def test_upload_profile_photo_sets_photo_url(
 
     get_settings.cache_clear()
     monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
+    monkeypatch.setenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
 
     from app.services.media_service import get_media_storage
 

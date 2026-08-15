@@ -116,3 +116,47 @@ def test_password_reset_confirm_allows_login_with_new_password(
         "/auth/login", json={"email": "ada@example.com", "password": "new-secret-pass"}
     )
     assert login.status_code == 200
+
+
+def test_change_password_allows_login_with_new_password(client: TestClient) -> None:
+    _register(client)
+    login = client.post("/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    response = client.post(
+        "/auth/change-password",
+        headers=headers,
+        json={"current_password": "s3cret-pass", "new_password": "new-secret-pass"},
+    )
+    assert response.status_code == 204
+
+    old_login = client.post("/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"})
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/auth/login", json={"email": "ada@example.com", "password": "new-secret-pass"}
+    )
+    assert new_login.status_code == 200
+
+
+def test_change_password_rejects_wrong_current_password(client: TestClient) -> None:
+    _register(client)
+    login = client.post("/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"})
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    response = client.post(
+        "/auth/change-password",
+        headers=headers,
+        json={"current_password": "wrong-pass", "new_password": "new-secret-pass"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_change_password_requires_authentication(client: TestClient) -> None:
+    response = client.post(
+        "/auth/change-password",
+        json={"current_password": "s3cret-pass", "new_password": "new-secret-pass"},
+    )
+
+    assert response.status_code == 401

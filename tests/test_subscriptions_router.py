@@ -64,17 +64,27 @@ def test_staff_can_grant_and_revoke_premium(client: TestClient, db_session: Sess
 import iyzipay
 
 def test_create_checkout_session_iyzico(client: TestClient, auth_headers: dict[str, str], monkeypatch) -> None:
-    # Mock iyzipay.CheckoutFormInitialize().create
-    dummy_response = {
-        "status": "success",
-        "paymentPageUrl": "https://sandbox-api.iyzipay.com/checkout/pay"
-    }
-    
+    # iyzipay's create()/retrieve() return a raw http.client.HTTPResponse, not a
+    # parsed dict -- the router reads and JSON-decodes it, so the mock must too.
+    import json
+
+    dummy_body = json.dumps(
+        {
+            "status": "success",
+            "paymentPageUrl": "https://sandbox-api.iyzipay.com/checkout/pay",
+        }
+    ).encode("utf-8")
+
+    class FakeHTTPResponse:
+        @staticmethod
+        def read():
+            return dummy_body
+
     class MockCreate:
         @staticmethod
         def create(request_data, options):
-            return dummy_response
-            
+            return FakeHTTPResponse()
+
     monkeypatch.setattr(
         iyzipay,
         "CheckoutFormInitialize",
@@ -91,17 +101,26 @@ def test_iyzico_callback_completed(client: TestClient, db_session: Session, monk
     user_id = client.get("/users/me", headers=user_headers).json()["id"]
 
     # Mock iyzipay.CheckoutForm().retrieve
-    dummy_retrieve_response = {
-        "status": "success",
-        "paymentStatus": "SUCCESS",
-        "conversationId": f"sub_{user_id}_12345678"
-    }
-    
+    import json
+
+    dummy_body = json.dumps(
+        {
+            "status": "success",
+            "paymentStatus": "SUCCESS",
+            "conversationId": f"sub_{user_id}_12345678",
+        }
+    ).encode("utf-8")
+
+    class FakeHTTPResponse:
+        @staticmethod
+        def read():
+            return dummy_body
+
     class MockRetrieve:
         @staticmethod
         def retrieve(request_data, options):
-            return dummy_retrieve_response
-            
+            return FakeHTTPResponse()
+
     monkeypatch.setattr(
         iyzipay,
         "CheckoutForm",

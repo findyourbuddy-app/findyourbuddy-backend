@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     redis_url: str | None = None
     iyzico_api_key: str = "sandbox-dummy-api-key"
     iyzico_secret_key: str = "sandbox-dummy-secret-key"
-    iyzico_base_url: str = "https://sandbox-api.iyzipay.com"
+    # HTTPSConnection takes a bare host, not a URL -- no scheme prefix here.
+    iyzico_base_url: str = "sandbox-api.iyzipay.com"
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24

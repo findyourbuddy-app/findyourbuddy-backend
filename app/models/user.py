@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, ForeignKey, String, Text
@@ -23,6 +23,8 @@ class User(Base):
     accepted_terms_at: Mapped[datetime | None] = mapped_column(default=None)
 
     age: Mapped[int | None] = mapped_column(default=None)
+    date_of_birth: Mapped[date | None] = mapped_column(default=None)
+    occupation: Mapped[str | None] = mapped_column(String(100), default=None)
     bio: Mapped[str | None] = mapped_column(Text, default=None)
     interests: Mapped[list[str]] = mapped_column(JSON, default=list)
     latitude: Mapped[float | None] = mapped_column(default=None)

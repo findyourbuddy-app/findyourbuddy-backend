@@ -48,6 +48,19 @@ def _already_swiped(db: Session, swiper_id: int, target_id: int, event_id: int) 
     return existing is not None
 
 
+def get_swipe_quota(db: Session, swiper_id: int) -> dict:
+    premium = is_premium(db, swiper_id)
+    settings = get_settings()
+    super_like_limit = settings.premium_daily_super_like_limit if premium else settings.daily_super_like_limit
+    return {
+        "is_premium": premium,
+        "swipes_used_today": _swipes_made_today(db, swiper_id),
+        "swipe_limit": None if premium else settings.daily_swipe_limit,
+        "super_likes_used_today": _swipes_made_today(db, swiper_id, SwipeDirection.SUPER_LIKE),
+        "super_like_limit": super_like_limit,
+    }
+
+
 def record_swipe(db: Session, swiper_id: int, data: SwipeCreate) -> Swipe:
     premium = is_premium(db, swiper_id)
     settings = get_settings()

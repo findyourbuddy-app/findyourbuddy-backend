@@ -1,17 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.core.deps import get_current_user
 from app.core.password_reset import PasswordResetSender, get_password_reset_sender
 from app.core.rate_limit import auth_rate_limit, limiter
 from app.core.security import create_access_token
 from app.database import get_db
-from app.schemas.auth import LoginRequest, PasswordResetConfirm, PasswordResetRequest, Token
+from app.models.user import User
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    LoginRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    Token,
+)
 from app.schemas.user import UserCreate, UserRead
 from app.services.auth_service import (
     EmailAlreadyRegisteredError,
+    IncorrectCurrentPasswordError,
     InvalidCredentialsError,
     InvalidOrExpiredResetTokenError,
     authenticate_user,
+    change_password,
     register_user,
     request_password_reset,
     reset_password,
@@ -67,4 +77,18 @@ def confirm_reset(request: Request, data: PasswordResetConfirm, db: Session = De
     except InvalidOrExpiredResetTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token"
+        ) from exc
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_my_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    try:
+        change_password(db, current_user, data.current_password, data.new_password)
+    except IncorrectCurrentPasswordError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect"
         ) from exc

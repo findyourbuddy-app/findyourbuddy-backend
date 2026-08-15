@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy.orm import Session
@@ -24,6 +24,11 @@ from app.services.swipe_service import (
     record_swipe,
 )
 from app.services.user_service import update_profile
+
+
+def _birth_date_for_age(age: int) -> date:
+    today = date.today()
+    return today.replace(year=today.year - age)
 
 
 def _register(db_session: Session, email: str) -> int:
@@ -374,8 +379,8 @@ def test_list_swipe_candidates_filters_by_age_range(db_session: Session) -> None
     old_id = _register(db_session, "old@example.com")
     unset_id = _register(db_session, "unset@example.com")
     event_id = _create_event(db_session, swiper_id)
-    update_profile(db_session, db_session.get(User, young_id), UserUpdate(age=20))
-    update_profile(db_session, db_session.get(User, old_id), UserUpdate(age=45))
+    update_profile(db_session, db_session.get(User, young_id), UserUpdate(date_of_birth=_birth_date_for_age(20)))
+    update_profile(db_session, db_session.get(User, old_id), UserUpdate(date_of_birth=_birth_date_for_age(45)))
 
     candidate_ids = {
         user.id
@@ -394,8 +399,8 @@ def test_list_swipe_candidates_ignores_age_filter_for_non_premium(db_session: Se
     young_id = _register(db_session, "young@example.com")
     old_id = _register(db_session, "old@example.com")
     event_id = _create_event(db_session, swiper_id)
-    update_profile(db_session, db_session.get(User, young_id), UserUpdate(age=20))
-    update_profile(db_session, db_session.get(User, old_id), UserUpdate(age=45))
+    update_profile(db_session, db_session.get(User, young_id), UserUpdate(date_of_birth=_birth_date_for_age(20)))
+    update_profile(db_session, db_session.get(User, old_id), UserUpdate(date_of_birth=_birth_date_for_age(45)))
 
     candidate_ids = {
         user.id
@@ -413,8 +418,8 @@ def test_list_swipe_candidates_applies_age_filter_for_premium(db_session: Sessio
     young_id = _register(db_session, "young@example.com")
     old_id = _register(db_session, "old@example.com")
     event_id = _create_event(db_session, swiper_id)
-    update_profile(db_session, db_session.get(User, young_id), UserUpdate(age=20))
-    update_profile(db_session, db_session.get(User, old_id), UserUpdate(age=45))
+    update_profile(db_session, db_session.get(User, young_id), UserUpdate(date_of_birth=_birth_date_for_age(20)))
+    update_profile(db_session, db_session.get(User, old_id), UserUpdate(date_of_birth=_birth_date_for_age(45)))
 
     candidate_ids = {
         user.id
@@ -478,17 +483,17 @@ def test_list_swipe_candidates_orders_by_recommendation_score(db_session: Sessio
     update_profile(
         db_session,
         db_session.get(User, swiper_id),
-        UserUpdate(age=25, interests=["jazz", "coffee", "art"]),
+        UserUpdate(date_of_birth=_birth_date_for_age(25), interests=["jazz", "coffee", "art"]),
     )
     update_profile(
         db_session,
         db_session.get(User, better_match_id),
-        UserUpdate(age=26, interests=["jazz", "coffee", "football"]),
+        UserUpdate(date_of_birth=_birth_date_for_age(26), interests=["jazz", "coffee", "football"]),
     )
     update_profile(
         db_session,
         db_session.get(User, worse_match_id),
-        UserUpdate(age=35, interests=["football", "tennis", "art"]),
+        UserUpdate(date_of_birth=_birth_date_for_age(35), interests=["football", "tennis", "art"]),
     )
 
     candidates = list_swipe_candidates(db_session, event_id=event_id, swiper_id=swiper_id)

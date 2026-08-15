@@ -1,9 +1,16 @@
+from datetime import date
+
 import pytest
 from sqlalchemy.orm import Session
 
 from app.schemas.user import UserCreate, UserUpdate
 from app.services.auth_service import InvalidCredentialsError, authenticate_user, register_user
 from app.services.user_service import delete_account, update_profile
+
+
+def _birth_date_for_age(age: int) -> date:
+    today = date.today()
+    return today.replace(year=today.year - age)
 
 
 def test_update_profile_applies_only_provided_fields(db_session: Session) -> None:
@@ -13,7 +20,9 @@ def test_update_profile_applies_only_provided_fields(db_session: Session) -> Non
     )
 
     updated = update_profile(
-        db_session, user, UserUpdate(age=28, interests=["hiking", "chess"])
+        db_session,
+        user,
+        UserUpdate(date_of_birth=_birth_date_for_age(28), interests=["hiking", "chess"]),
     )
 
     assert updated.age == 28
@@ -28,7 +37,7 @@ def test_update_profile_ignores_unset_fields(db_session: Session) -> None:
     )
     update_profile(db_session, user, UserUpdate(bio="Loves trails"))
 
-    update_profile(db_session, user, UserUpdate(age=30))
+    update_profile(db_session, user, UserUpdate(date_of_birth=_birth_date_for_age(30)))
 
     assert user.bio == "Loves trails"
     assert user.age == 30

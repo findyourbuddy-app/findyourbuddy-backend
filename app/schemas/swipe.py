@@ -23,3 +23,11 @@ class SwipeRead(BaseModel):
     created_at: datetime
     match_id: int | None = None
     matched_user: UserPublic | None = None
+
+
+class SwipeQuota(BaseModel):
+    is_premium: bool
+    swipes_used_today: int
+    swipe_limit: int | None
+    super_likes_used_today: int
+    super_like_limit: int

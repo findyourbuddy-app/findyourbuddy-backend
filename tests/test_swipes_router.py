@@ -252,3 +252,50 @@ def test_get_candidates_includes_gallery_photos(
 
     get_settings.cache_clear()
     get_media_storage.cache_clear()
+
+
+def test_get_quota_reflects_usage_for_free_user(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setenv("DAILY_SWIPE_LIMIT", "5")
+    monkeypatch.setenv("DAILY_SUPER_LIKE_LIMIT", "1")
+    get_settings.cache_clear()
+
+    swiper_headers = _register_and_login(client, "swiper@example.com")
+    target_id = client.get(
+        "/users/me", headers=_register_and_login(client, "target@example.com")
+    ).json()["id"]
+    event_id = _create_event(client, swiper_headers)
+
+    client.post(
+        "/swipes/",
+        headers=swiper_headers,
+        json={"target_id": target_id, "event_id": event_id, "direction": "super_like"},
+    )
+
+    response = client.get("/swipes/quota", headers=swiper_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_premium"] is False
+    assert body["swipes_used_today"] == 1
+    assert body["swipe_limit"] == 5
+    assert body["super_likes_used_today"] == 1
+    assert body["super_like_limit"] == 1
+
+    get_settings.cache_clear()
+
+
+def test_get_quota_has_no_swipe_limit_for_premium_user(
+    client: TestClient, db_session, monkeypatch
+) -> None:
+    from app.services.subscription_service import grant_premium
+
+    swiper_headers = _register_and_login(client, "swiper@example.com")
+    swiper_id = client.get("/users/me", headers=swiper_headers).json()["id"]
+    grant_premium(db_session, swiper_id)
+
+    response = client.get("/swipes/quota", headers=swiper_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_premium"] is True
+    assert body["swipe_limit"] is None
