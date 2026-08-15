@@ -10,6 +10,7 @@ from app.database import Base
 class SwipeDirection(str, enum.Enum):
     LIKE = "like"
     PASS = "pass"
+    SUPER_LIKE = "super_like"
 
 
 class Swipe(Base):

@@ -6,6 +6,7 @@ from app.config import get_settings
 from app.core.security import decode_access_token
 from app.database import get_db
 from app.models.user import User
+from app.services.subscription_service import is_premium
 
 _oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -24,7 +25,7 @@ def get_current_user(
         raise credentials_error
 
     user = db.get(User, int(user_id))
-    if user is None:
+    if user is None or not user.is_active:
         raise credentials_error
 
     return user
@@ -34,6 +35,16 @@ def get_current_staff_user(current_user: User = Depends(get_current_user)) -> Us
     if not current_user.is_staff:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Staff privileges required"
+        )
+    return current_user
+
+
+def get_current_premium_user(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> User:
+    if not is_premium(db, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Premium subscription required"
         )
     return current_user
 

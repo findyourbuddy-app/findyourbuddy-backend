@@ -17,3 +17,4 @@ class MatchRead(BaseModel):
     created_at: datetime
     other_user: UserPublic
     last_message: MessageRead | None = None
+    needs_feedback: bool = False

@@ -7,14 +7,28 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Uygulama genelinde kullanılan, .env üzerinden okunan ayarlar."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     database_url: str
+    redis_url: str | None = None
+    iyzico_api_key: str = "sandbox-dummy-api-key"
+    iyzico_secret_key: str = "sandbox-dummy-secret-key"
+    # HTTPSConnection takes a bare host, not a URL -- no scheme prefix here.
+    iyzico_base_url: str = "sandbox-api.iyzipay.com"
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24
 
-    daily_swipe_limit: int = 50
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_sender: str = "noreply@findyourbuddy.com"
+
+    daily_swipe_limit: int = 10
+    daily_super_like_limit: int = 1
+    premium_daily_super_like_limit: int = 5
+    daily_event_creation_limit: int = 2
     match_common_interest_weight: float = 0.6
     match_distance_weight: float = 0.4
     match_max_distance_km: float = 50.0
@@ -36,6 +50,10 @@ class Settings(BaseSettings):
         "boardgames",
         "football",
         "party",
+        "theatre",
+        "art",
+        "workshop",
+        "hobby",
         "other",
     ]
 
@@ -48,9 +66,24 @@ class Settings(BaseSettings):
 
     media_root: str = "media"
     media_base_url: str = "/media"
+    public_base_url: str = "http://127.0.0.1:8000"
+
+    push_provider: str = "logging"
+    expo_push_api_url: str = "https://exp.host/--/api/v2/push/send"
+
+    sms_provider: str = "logging"
 
     cors_allowed_origins: str = "*"
     log_level: str = "INFO"
+
+    sentry_dsn: str = ""
+    environment: str = "development"
+
+    event_retention_days: int = 30
+    scheduler_interval_hours: float = 6.0
+
+    geocoding_base_url: str = "https://nominatim.openstreetmap.org"
+    geocoding_user_agent: str = "findyourbuddy-app/0.1 (contact@findyourbuddy.dev)"
 
 
 @lru_cache

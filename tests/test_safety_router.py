@@ -9,7 +9,7 @@ from app.models.user import User
 def _register_and_login(client: TestClient, email: str) -> dict[str, str]:
     client.post(
         "/auth/register",
-        json={"email": email, "password": "s3cret-pass", "display_name": email},
+        json={"email": email, "password": "s3cret-pass", "display_name": email, "accepted_terms": True, "phone_number": f"5{abs(hash(email)) % 10**9:09d}"},
     )
     response = client.post("/auth/login", json={"email": email, "password": "s3cret-pass"})
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
@@ -125,6 +125,7 @@ def test_unblock_user_returns_204_and_restores_candidate_visibility(client: Test
     b_headers = _register_and_login(client, "b@example.com")
     b_id = client.get("/users/me", headers=b_headers).json()["id"]
     event_id = _create_event(client, a_headers)
+    client.post(f"/events/{event_id}/attend", headers=b_headers)
     client.post(f"/users/{b_id}/block", headers=a_headers)
 
     response = client.delete(f"/users/{b_id}/block", headers=a_headers)
@@ -134,6 +135,32 @@ def test_unblock_user_returns_204_and_restores_candidate_visibility(client: Test
         "/swipes/candidates", headers=a_headers, params={"event_id": event_id}
     ).json()
     assert b_id in [user["id"] for user in candidates]
+
+
+def test_list_my_blocks_returns_blocked_users(client: TestClient) -> None:
+    a_headers = _register_and_login(client, "a@example.com")
+    b_headers = _register_and_login(client, "b@example.com")
+    b_id = client.get("/users/me", headers=b_headers).json()["id"]
+    client.post(f"/users/{b_id}/block", headers=a_headers)
+
+    response = client.get("/users/me/blocks", headers=a_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["blocked_user"]["id"] == b_id
+
+
+def test_list_my_blocks_excludes_blocks_placed_on_me(client: TestClient) -> None:
+    a_headers = _register_and_login(client, "a@example.com")
+    b_headers = _register_and_login(client, "b@example.com")
+    a_id = client.get("/users/me", headers=a_headers).json()["id"]
+    client.post(f"/users/{a_id}/block", headers=b_headers)
+
+    response = client.get("/users/me/blocks", headers=a_headers)
+
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 def test_unblocking_a_non_blocked_user_returns_404(client: TestClient) -> None:
@@ -215,6 +242,34 @@ def test_create_report_returns_201(client: TestClient) -> None:
 
     assert response.status_code == 201
     assert response.json()["status"] == "pending"
+
+
+def test_non_staff_cannot_list_reports(client: TestClient) -> None:
+    a_headers = _register_and_login(client, "a@example.com")
+
+    response = client.get("/reports", headers=a_headers)
+
+    assert response.status_code == 403
+
+
+def test_staff_can_list_reports(client: TestClient, db_session: Session) -> None:
+    a_headers = _register_and_login(client, "a@example.com")
+    b_headers = _register_and_login(client, "b@example.com")
+    a_id = client.get("/users/me", headers=a_headers).json()["id"]
+    b_id = client.get("/users/me", headers=b_headers).json()["id"]
+    client.post(
+        "/reports", headers=a_headers, json={"reported_user_id": b_id, "reason": "harassment"}
+    )
+
+    staff_user = db_session.get(User, a_id)
+    staff_user.is_staff = True
+    db_session.commit()
+
+    response = client.get("/reports", headers=a_headers)
+
+    assert response.status_code == 200
+    assert len(response.json()) == 1
+    assert response.json()[0]["reported_user_id"] == b_id
 
 
 def test_reporting_self_returns_400(client: TestClient) -> None:

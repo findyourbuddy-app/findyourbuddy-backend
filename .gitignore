@@ -33,3 +33,6 @@ htmlcov/
 
 # Locally stored uploaded media
 media/
+
+# Runtime logs
+*.log

@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from app.models.report import ReportReason, ReportStatus
+from app.schemas.user import UserPublic
 
 
 class BlockRead(BaseModel):
@@ -11,6 +12,12 @@ class BlockRead(BaseModel):
     id: int
     blocker_id: int
     blocked_id: int
+    created_at: datetime
+
+
+class BlockedUserRead(BaseModel):
+    id: int
+    blocked_user: UserPublic
     created_at: datetime
 
 

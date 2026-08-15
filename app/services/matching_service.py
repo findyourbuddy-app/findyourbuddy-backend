@@ -1,10 +1,10 @@
 import logging
-import math
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.geo import haversine_km
 from app.models.match import Match
 from app.models.message import Message
 from app.models.swipe import Swipe, SwipeDirection
@@ -13,11 +13,12 @@ from app.services.safety_service import blocked_user_ids
 
 logger = logging.getLogger(__name__)
 
-_EARTH_RADIUS_KM = 6371.0
-
 
 def _ordered_pair(user_a_id: int, user_b_id: int) -> tuple[int, int]:
     return (user_a_id, user_b_id) if user_a_id < user_b_id else (user_b_id, user_a_id)
+
+
+_LIKE_DIRECTIONS = (SwipeDirection.LIKE, SwipeDirection.SUPER_LIKE)
 
 
 def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> bool:
@@ -27,7 +28,7 @@ def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: i
             Swipe.swiper_id == user_a_id,
             Swipe.target_id == user_b_id,
             Swipe.event_id == event_id,
-            Swipe.direction == SwipeDirection.LIKE,
+            Swipe.direction.in_(_LIKE_DIRECTIONS),
         )
         .first()
     )
@@ -37,7 +38,7 @@ def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: i
             Swipe.swiper_id == user_b_id,
             Swipe.target_id == user_a_id,
             Swipe.event_id == event_id,
-            Swipe.direction == SwipeDirection.LIKE,
+            Swipe.direction.in_(_LIKE_DIRECTIONS),
         )
         .first()
     )
@@ -62,17 +63,6 @@ def _interest_score(user_a: User, user_b: User) -> float:
     return len(shared) / len(total) if total else 0.0
 
 
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    lat1_rad, lat2_rad = math.radians(lat1), math.radians(lat2)
-    delta_lat = math.radians(lat2 - lat1)
-    delta_lon = math.radians(lon2 - lon1)
-    a = (
-        math.sin(delta_lat / 2) ** 2
-        + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon / 2) ** 2
-    )
-    return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
-
-
 def _distance_score(user_a: User, user_b: User) -> float:
     has_coordinates = None not in (
         user_a.latitude,
@@ -84,7 +74,7 @@ def _distance_score(user_a: User, user_b: User) -> float:
         return 0.0
 
     max_distance_km = get_settings().match_max_distance_km
-    distance_km = _haversine_km(
+    distance_km = haversine_km(
         user_a.latitude, user_a.longitude, user_b.latitude, user_b.longitude
     )
     return max(0.0, 1 - distance_km / max_distance_km)
@@ -126,15 +116,21 @@ def _other_user_id(match: Match, user_id: int) -> int:
     return match.user_b_id if match.user_a_id == user_id else match.user_a_id
 
 
-def list_matches_for_user(db: Session, user_id: int) -> list[Match]:
+def list_matches_for_user(
+    db: Session, user_id: int, skip: int = 0, limit: int = 50
+) -> list[Match]:
     blocked_ids = set(blocked_user_ids(db, user_id))
     matches = (
         db.query(Match)
-        .filter(or_(Match.user_a_id == user_id, Match.user_b_id == user_id))
+        .filter(
+            or_(Match.user_a_id == user_id, Match.user_b_id == user_id),
+            Match.is_active.is_(True),
+        )
         .order_by(Match.created_at.desc())
         .all()
     )
-    return [match for match in matches if _other_user_id(match, user_id) not in blocked_ids]
+    visible = [match for match in matches if _other_user_id(match, user_id) not in blocked_ids]
+    return visible[skip : skip + limit]
 
 
 def _last_message(db: Session, match_id: int) -> Message | None:
@@ -147,9 +143,9 @@ def _last_message(db: Session, match_id: int) -> Message | None:
 
 
 def list_matches_with_details(
-    db: Session, user_id: int
+    db: Session, user_id: int, skip: int = 0, limit: int = 50
 ) -> list[tuple[Match, User, Message | None]]:
-    matches = list_matches_for_user(db, user_id)
+    matches = list_matches_for_user(db, user_id, skip=skip, limit=limit)
 
     other_ids = {_other_user_id(match, user_id) for match in matches}
     users_by_id = {

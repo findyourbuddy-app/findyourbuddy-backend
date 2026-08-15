@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict
 
 class MessageCreate(BaseModel):
     content: str
+    message_type: str = "text"
+    media_url: str | None = None
 
 
 class MessageRead(BaseModel):
@@ -14,6 +16,8 @@ class MessageRead(BaseModel):
     match_id: int
     sender_id: int
     content: str
+    message_type: str
+    media_url: str | None = None
     is_read: bool
     created_at: datetime
 

@@ -10,6 +10,31 @@ services:
       - "5432:5432"
     volumes:
       - findyourbuddy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d findyourbuddy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/findyourbuddy
+      JWT_SECRET_KEY: change-me
+      SCRAPER_API_KEY: change-me
+      PUBLIC_BASE_URL: http://localhost:8000
+      ENVIRONMENT: development
+    volumes:
+      - findyourbuddy_media:/app/media
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
 volumes:
   findyourbuddy_pgdata:
+  findyourbuddy_media:

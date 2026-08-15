@@ -24,4 +24,8 @@ class Event(Base):
     source: Mapped[str | None] = mapped_column(String(50), default=None)
     external_id: Mapped[str | None] = mapped_column(String(255), default=None)
     source_url: Mapped[str | None] = mapped_column(String(500), default=None)
+    image_url: Mapped[str | None] = mapped_column(String(500), default=None)
+    is_group_event: Mapped[bool] = mapped_column(default=False, server_default="false")
+    max_attendees: Mapped[int | None] = mapped_column(default=None)
+    is_paid: Mapped[bool] = mapped_column(default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)

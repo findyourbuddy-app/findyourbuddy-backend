@@ -16,3 +16,4 @@ class Match(Base):
     user_b_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     score: Mapped[float] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    is_active: Mapped[bool] = mapped_column(default=True, server_default="true")

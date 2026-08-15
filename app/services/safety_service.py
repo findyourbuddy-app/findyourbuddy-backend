@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.models.block import Block
 from app.models.report import Report, ReportStatus
+from app.models.user import User
 from app.schemas.safety import ReportCreate
 
 
@@ -78,6 +79,21 @@ def blocked_user_ids(db: Session, user_id: int) -> list[int]:
     return [row[0] for row in blocked_by_me.union(blocked_me).all()]
 
 
+def list_my_blocks(db: Session, user_id: int) -> list[tuple[Block, User]]:
+    """Blocks the given user created themselves (not blocks placed on them by others)."""
+    blocks = (
+        db.query(Block)
+        .filter(Block.blocker_id == user_id)
+        .order_by(Block.created_at.desc())
+        .all()
+    )
+    users_by_id = {
+        user.id: user
+        for user in db.query(User).filter(User.id.in_([b.blocked_id for b in blocks])).all()
+    }
+    return [(block, users_by_id[block.blocked_id]) for block in blocks]
+
+
 def create_report(db: Session, reporter_id: int, data: ReportCreate) -> Report:
     if reporter_id == data.reported_user_id:
         raise CannotReportSelfError(reporter_id)
@@ -93,6 +109,17 @@ def create_report(db: Session, reporter_id: int, data: ReportCreate) -> Report:
     db.commit()
     db.refresh(report)
     return report
+
+
+def list_reports(
+    db: Session, status: ReportStatus | None = None, reported_user_id: int | None = None
+) -> list[Report]:
+    query = db.query(Report)
+    if status is not None:
+        query = query.filter(Report.status == status)
+    if reported_user_id is not None:
+        query = query.filter(Report.reported_user_id == reported_user_id)
+    return query.order_by(Report.created_at.desc()).all()
 
 
 def update_report_status(db: Session, report_id: int, new_status: ReportStatus) -> Report:

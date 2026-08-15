@@ -22,7 +22,8 @@ from app.services.user_service import update_profile
 
 def _register(db_session: Session, email: str) -> int:
     return register_user(
-        db_session, UserCreate(email=email, password="s3cret-pass", display_name=email)
+        db_session,
+        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True, phone_number=f"5{abs(hash(email)) % 10**9:09d}"),
     ).id
 
 
@@ -166,6 +167,20 @@ def test_list_matches_for_user_includes_matches_from_either_side(db_session: Ses
     assert len(list_matches_for_user(db_session, user_a)) == 2
     assert len(list_matches_for_user(db_session, user_b)) == 1
     assert len(list_matches_for_user(db_session, user_c)) == 1
+
+
+def test_list_matches_for_user_respects_skip_and_limit(db_session: Session) -> None:
+    user_a = _register(db_session, "a@example.com")
+    others = [_register(db_session, f"other{i}@example.com") for i in range(3)]
+    event_id = _create_event(db_session, user_a)
+
+    for other in others:
+        _swipe(db_session, user_a, other, event_id, SwipeDirection.LIKE)
+        _swipe(db_session, other, user_a, event_id, SwipeDirection.LIKE)
+        try_create_match(db_session, user_a, other, event_id)
+
+    assert len(list_matches_for_user(db_session, user_a, skip=0, limit=2)) == 2
+    assert len(list_matches_for_user(db_session, user_a, skip=2, limit=2)) == 1
 
 
 def test_list_matches_for_user_excludes_matches_with_blocked_users(db_session: Session) -> None:

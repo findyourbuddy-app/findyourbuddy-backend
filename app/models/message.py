@@ -13,5 +13,7 @@ class Message(Base):
     match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
     sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     content: Mapped[str] = mapped_column(Text)
+    message_type: Mapped[str] = mapped_column(default="text", server_default="text")
+    media_url: Mapped[str | None] = mapped_column(nullable=True)
     is_read: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, index=True)
