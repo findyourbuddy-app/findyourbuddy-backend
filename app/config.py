@@ -48,9 +48,19 @@ class Settings(BaseSettings):
 
     media_root: str = "media"
     media_base_url: str = "/media"
+    public_base_url: str = "http://127.0.0.1:8000"
+
+    push_provider: str = "logging"
+    expo_push_api_url: str = "https://exp.host/--/api/v2/push/send"
 
     cors_allowed_origins: str = "*"
     log_level: str = "INFO"
+
+    sentry_dsn: str = ""
+    environment: str = "development"
+
+    event_retention_days: int = 30
+    scheduler_interval_hours: float = 6.0
 
 
 @lru_cache

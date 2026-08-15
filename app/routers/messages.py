@@ -74,7 +74,7 @@ def post_message(
 
     match = db.get(Match, match_id)
     recipient_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
-    notify_new_message(notification_sender, message, recipient_id)
+    notify_new_message(db, notification_sender, message, recipient_id)
 
     return message
 

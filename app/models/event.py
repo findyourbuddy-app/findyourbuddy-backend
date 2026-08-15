@@ -24,4 +24,5 @@ class Event(Base):
     source: Mapped[str | None] = mapped_column(String(50), default=None)
     external_id: Mapped[str | None] = mapped_column(String(255), default=None)
     source_url: Mapped[str | None] = mapped_column(String(500), default=None)
+    image_url: Mapped[str | None] = mapped_column(String(500), default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)

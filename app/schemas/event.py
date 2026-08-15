@@ -28,4 +28,5 @@ class EventRead(BaseModel):
     source: str | None
     external_id: str | None
     source_url: str | None
+    image_url: str | None
     created_at: datetime

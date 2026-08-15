@@ -28,4 +28,5 @@ class LocalMediaStorage:
 @lru_cache
 def get_media_storage() -> MediaStorage:
     settings = get_settings()
-    return LocalMediaStorage(Path(settings.media_root), settings.media_base_url)
+    public_media_url = f"{settings.public_base_url.rstrip('/')}{settings.media_base_url}"
+    return LocalMediaStorage(Path(settings.media_root), public_media_url)

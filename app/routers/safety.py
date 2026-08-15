@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_staff_user, get_current_user
 from app.database import get_db
 from app.models.block import Block
-from app.models.report import Report
+from app.models.report import Report, ReportStatus
 from app.models.user import User
-from app.schemas.safety import BlockRead, ReportCreate, ReportRead, ReportStatusUpdate
+from app.schemas.safety import BlockedUserRead, BlockRead, ReportCreate, ReportRead, ReportStatusUpdate
+from app.schemas.user import UserPublic
 from app.services.safety_service import (
     AlreadyBlockedError,
     BlockNotFoundError,
@@ -15,6 +16,8 @@ from app.services.safety_service import (
     ReportNotFoundError,
     block_user,
     create_report,
+    list_my_blocks,
+    list_reports,
     unblock_user,
     update_report_status,
 )
@@ -56,6 +59,19 @@ def unblock(
         ) from exc
 
 
+@router.get("/users/me/blocks", response_model=list[BlockedUserRead])
+def list_my_blocked_users(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[BlockedUserRead]:
+    return [
+        BlockedUserRead(
+            id=block.id, blocked_user=UserPublic.model_validate(user), created_at=block.created_at
+        )
+        for block, user in list_my_blocks(db, current_user.id)
+    ]
+
+
 @router.post("/reports", response_model=ReportRead, status_code=status.HTTP_201_CREATED)
 def report(
     data: ReportCreate,
@@ -68,6 +84,16 @@ def report(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot report yourself"
         ) from exc
+
+
+@router.get("/reports", response_model=list[ReportRead])
+def list_all_reports(
+    status: ReportStatus | None = None,
+    reported_user_id: int | None = None,
+    _staff_user: User = Depends(get_current_staff_user),
+    db: Session = Depends(get_db),
+) -> list[Report]:
+    return list_reports(db, status=status, reported_user_id=reported_user_id)
 
 
 @router.patch("/reports/{report_id}", response_model=ReportRead)

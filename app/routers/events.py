@@ -15,10 +15,14 @@ router = APIRouter(prefix="/events", tags=["events"])
 def list_all_events(
     category: str | None = None,
     upcoming_only: bool = True,
+    skip: int = 0,
+    limit: int = 50,
     db: Session = Depends(get_db),
     _current_user: User = Depends(get_current_user),
 ) -> list[Event]:
-    return list_events(db, category=category, upcoming_only=upcoming_only)
+    return list_events(
+        db, category=category, upcoming_only=upcoming_only, skip=skip, limit=limit
+    )
 
 
 @router.get("/{event_id}", response_model=EventRead)

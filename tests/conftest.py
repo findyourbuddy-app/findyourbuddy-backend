@@ -68,7 +68,12 @@ def client(
 def auth_headers(client: TestClient) -> dict[str, str]:
     client.post(
         "/auth/register",
-        json={"email": "ada@example.com", "password": "s3cret-pass", "display_name": "Ada"},
+        json={
+            "email": "ada@example.com",
+            "password": "s3cret-pass",
+            "display_name": "Ada",
+            "accepted_terms": True,
+        },
     )
     response = client.post(
         "/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"}

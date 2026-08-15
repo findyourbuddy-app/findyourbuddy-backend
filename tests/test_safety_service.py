@@ -15,6 +15,8 @@ from app.services.safety_service import (
     blocked_user_ids,
     create_report,
     is_blocked,
+    list_my_blocks,
+    list_reports,
     unblock_user,
     update_report_status,
 )
@@ -22,7 +24,8 @@ from app.services.safety_service import (
 
 def _register(db_session: Session, email: str) -> int:
     return register_user(
-        db_session, UserCreate(email=email, password="s3cret-pass", display_name=email)
+        db_session,
+        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True),
     ).id
 
 
@@ -69,6 +72,21 @@ def test_blocked_user_ids_includes_both_directions(db_session: Session) -> None:
     block_user(db_session, c, a)
 
     assert set(blocked_user_ids(db_session, a)) == {b, c}
+
+
+def test_list_my_blocks_returns_only_blocks_i_created(db_session: Session) -> None:
+    a = _register(db_session, "a@example.com")
+    b = _register(db_session, "b@example.com")
+    c = _register(db_session, "c@example.com")
+    block_user(db_session, a, b)
+    block_user(db_session, c, a)
+
+    result = list_my_blocks(db_session, a)
+
+    assert len(result) == 1
+    block, user = result[0]
+    assert block.blocked_id == b
+    assert user.id == b
 
 
 def test_unblock_user_removes_block(db_session: Session) -> None:
@@ -130,3 +148,36 @@ def test_update_report_status_changes_status(db_session: Session) -> None:
 def test_update_report_status_raises_for_unknown_report(db_session: Session) -> None:
     with pytest.raises(ReportNotFoundError):
         update_report_status(db_session, 999, ReportStatus.DISMISSED)
+
+
+def test_list_reports_filters_by_status(db_session: Session) -> None:
+    reporter = _register(db_session, "reporter@example.com")
+    reported = _register(db_session, "reported@example.com")
+    pending = create_report(
+        db_session,
+        reporter,
+        ReportCreate(reported_user_id=reported, reason=ReportReason.SPAM),
+    )
+    reviewed = create_report(
+        db_session,
+        reporter,
+        ReportCreate(reported_user_id=reported, reason=ReportReason.OTHER),
+    )
+    update_report_status(db_session, reviewed.id, ReportStatus.REVIEWED)
+
+    result = list_reports(db_session, status=ReportStatus.PENDING)
+
+    assert [report.id for report in result] == [pending.id]
+
+
+def test_list_reports_filters_by_reported_user(db_session: Session) -> None:
+    reporter = _register(db_session, "reporter@example.com")
+    reported_a = _register(db_session, "reported-a@example.com")
+    reported_b = _register(db_session, "reported-b@example.com")
+    create_report(db_session, reporter, ReportCreate(reported_user_id=reported_a, reason=ReportReason.SPAM))
+    create_report(db_session, reporter, ReportCreate(reported_user_id=reported_b, reason=ReportReason.SPAM))
+
+    result = list_reports(db_session, reported_user_id=reported_a)
+
+    assert len(result) == 1
+    assert result[0].reported_user_id == reported_a

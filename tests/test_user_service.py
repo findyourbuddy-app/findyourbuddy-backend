@@ -1,14 +1,15 @@
+import pytest
 from sqlalchemy.orm import Session
 
 from app.schemas.user import UserCreate, UserUpdate
-from app.services.auth_service import register_user
-from app.services.user_service import update_profile
+from app.services.auth_service import InvalidCredentialsError, authenticate_user, register_user
+from app.services.user_service import delete_account, update_profile
 
 
 def test_update_profile_applies_only_provided_fields(db_session: Session) -> None:
     user = register_user(
         db_session,
-        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada"),
+        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
     )
 
     updated = update_profile(
@@ -23,7 +24,7 @@ def test_update_profile_applies_only_provided_fields(db_session: Session) -> Non
 def test_update_profile_ignores_unset_fields(db_session: Session) -> None:
     user = register_user(
         db_session,
-        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada"),
+        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
     )
     update_profile(db_session, user, UserUpdate(bio="Loves trails"))
 
@@ -31,3 +32,46 @@ def test_update_profile_ignores_unset_fields(db_session: Session) -> None:
 
     assert user.bio == "Loves trails"
     assert user.age == 30
+
+
+def test_delete_account_deactivates_and_scrubs_pii(db_session: Session) -> None:
+    user = register_user(
+        db_session,
+        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
+    )
+    update_profile(db_session, user, UserUpdate(bio="Loves trails", interests=["hiking"]))
+
+    delete_account(db_session, user)
+
+    assert user.is_active is False
+    assert user.email != "ada@example.com"
+    assert user.bio is None
+    assert user.interests == []
+    assert user.photo_url is None
+
+
+def test_delete_account_prevents_future_login(db_session: Session) -> None:
+    user = register_user(
+        db_session,
+        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
+    )
+
+    delete_account(db_session, user)
+
+    with pytest.raises(InvalidCredentialsError):
+        authenticate_user(db_session, "ada@example.com", "s3cret-pass")
+
+
+def test_delete_account_frees_email_for_reuse(db_session: Session) -> None:
+    user = register_user(
+        db_session,
+        UserCreate(email="ada@example.com", password="s3cret-pass", display_name="Ada", accepted_terms=True),
+    )
+    delete_account(db_session, user)
+
+    new_user = register_user(
+        db_session,
+        UserCreate(email="ada@example.com", password="another-pass", display_name="Ada2", accepted_terms=True),
+    )
+
+    assert new_user.id != user.id

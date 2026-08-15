@@ -4,16 +4,17 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user
 from app.core.notifications import NotificationSender, get_notification_sender
 from app.database import get_db
-from app.models.swipe import Swipe, SwipeDirection
+from app.models.swipe import SwipeDirection
 from app.models.user import User
 from app.schemas.swipe import SwipeCreate, SwipeRead
-from app.schemas.user import UserRead
+from app.schemas.user import UserPublic, UserRead
 from app.services.matching_service import try_create_match
 from app.services.notification_service import notify_match_created
 from app.services.swipe_service import (
     BlockedUserError,
     DailySwipeLimitExceededError,
     DuplicateSwipeError,
+    list_incoming_likes,
     list_swipe_candidates,
     record_swipe,
 )
@@ -27,7 +28,7 @@ def create_swipe(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     notification_sender: NotificationSender = Depends(get_notification_sender),
-) -> Swipe:
+) -> SwipeRead:
     try:
         swipe = record_swipe(db, current_user.id, data)
     except DailySwipeLimitExceededError as exc:
@@ -46,18 +47,43 @@ def create_swipe(
             detail="Cannot swipe on a blocked user",
         ) from exc
 
+    match_id: int | None = None
+    matched_user: UserPublic | None = None
     if swipe.direction == SwipeDirection.LIKE:
         match = try_create_match(db, current_user.id, data.target_id, data.event_id)
         if match is not None:
-            notify_match_created(notification_sender, match)
+            notify_match_created(db, notification_sender, match)
+            match_id = match.id
+            matched_user = UserPublic.model_validate(db.get(User, data.target_id))
 
-    return swipe
+    return SwipeRead.model_validate(swipe).model_copy(
+        update={"match_id": match_id, "matched_user": matched_user}
+    )
 
 
 @router.get("/candidates", response_model=list[UserRead])
 def get_swipe_candidates(
     event_id: int,
+    min_age: int | None = None,
+    max_age: int | None = None,
+    max_distance_km: float | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[User]:
-    return list_swipe_candidates(db, event_id=event_id, swiper_id=current_user.id)
+    return list_swipe_candidates(
+        db,
+        event_id=event_id,
+        swiper_id=current_user.id,
+        min_age=min_age,
+        max_age=max_age,
+        max_distance_km=max_distance_km,
+    )
+
+
+@router.get("/likes-received", response_model=list[UserRead])
+def get_incoming_likes(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[User]:
+    return list_incoming_likes(db, event_id=event_id, user_id=current_user.id)

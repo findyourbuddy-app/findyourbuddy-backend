@@ -14,6 +14,8 @@ router = APIRouter(prefix="/matches", tags=["matches"])
 
 @router.get("/", response_model=list[MatchRead])
 def list_my_matches(
+    skip: int = 0,
+    limit: int = 50,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[MatchRead]:
@@ -28,5 +30,7 @@ def list_my_matches(
             other_user=UserPublic.model_validate(other_user),
             last_message=MessageRead.model_validate(last_message) if last_message else None,
         )
-        for match, other_user, last_message in list_matches_with_details(db, current_user.id)
+        for match, other_user, last_message in list_matches_with_details(
+            db, current_user.id, skip=skip, limit=limit
+        )
     ]

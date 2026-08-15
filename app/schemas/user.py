@@ -1,4 +1,8 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
+
+from app.schemas.user_photo import UserPhotoRead
 
 
 class UserPublic(BaseModel):
@@ -13,6 +17,14 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     display_name: str
+    accepted_terms: bool
+
+    @field_validator("accepted_terms")
+    @classmethod
+    def _require_accepted_terms(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("Terms of service and privacy policy must be accepted")
+        return value
 
 
 class UserRead(BaseModel):
@@ -28,6 +40,8 @@ class UserRead(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     photo_url: str | None = None
+    accepted_terms_at: datetime | None = None
+    photos: list[UserPhotoRead] = []
 
 
 class UserUpdate(BaseModel):

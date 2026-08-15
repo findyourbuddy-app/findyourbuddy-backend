@@ -1,10 +1,18 @@
+import logging
+import re
+
 from fastapi.testclient import TestClient
 
 
 def _register(client: TestClient) -> None:
     response = client.post(
         "/auth/register",
-        json={"email": "ada@example.com", "password": "s3cret-pass", "display_name": "Ada"},
+        json={
+            "email": "ada@example.com",
+            "password": "s3cret-pass",
+            "display_name": "Ada",
+            "accepted_terms": True,
+        },
     )
     assert response.status_code == 201
 
@@ -12,7 +20,12 @@ def _register(client: TestClient) -> None:
 def test_register_returns_created_user(client: TestClient) -> None:
     response = client.post(
         "/auth/register",
-        json={"email": "ada@example.com", "password": "s3cret-pass", "display_name": "Ada"},
+        json={
+            "email": "ada@example.com",
+            "password": "s3cret-pass",
+            "display_name": "Ada",
+            "accepted_terms": True,
+        },
     )
 
     assert response.status_code == 201
@@ -27,7 +40,12 @@ def test_register_rejects_duplicate_email(client: TestClient) -> None:
 
     response = client.post(
         "/auth/register",
-        json={"email": "ada@example.com", "password": "other-pass", "display_name": "Ada2"},
+        json={
+            "email": "ada@example.com",
+            "password": "other-pass",
+            "display_name": "Ada2",
+            "accepted_terms": True,
+        },
     )
 
     assert response.status_code == 409
@@ -54,3 +72,47 @@ def test_login_rejects_wrong_password(client: TestClient) -> None:
     )
 
     assert response.status_code == 401
+
+
+def test_password_reset_request_returns_204_for_known_and_unknown_email(
+    client: TestClient,
+) -> None:
+    _register(client)
+
+    known = client.post("/auth/password-reset/request", json={"email": "ada@example.com"})
+    unknown = client.post("/auth/password-reset/request", json={"email": "nobody@example.com"})
+
+    assert known.status_code == 204
+    assert unknown.status_code == 204
+
+
+def test_password_reset_confirm_rejects_invalid_token(client: TestClient) -> None:
+    response = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": "not-a-real-token", "new_password": "new-secret-pass"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_password_reset_confirm_allows_login_with_new_password(
+    client: TestClient, caplog
+) -> None:
+    _register(client)
+
+    caplog.set_level(logging.INFO, logger="app.core.password_reset")
+    client.post("/auth/password-reset/request", json={"email": "ada@example.com"})
+    match = re.search(r"token=(\S+)", caplog.text)
+    assert match is not None
+    token = match.group(1)
+
+    confirm = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": token, "new_password": "new-secret-pass"},
+    )
+    assert confirm.status_code == 204
+
+    login = client.post(
+        "/auth/login", json={"email": "ada@example.com", "password": "new-secret-pass"}
+    )
+    assert login.status_code == 200

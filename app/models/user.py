@@ -1,9 +1,13 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.user_photo import UserPhoto
 
 
 class User(Base):
@@ -16,6 +20,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     is_staff: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    accepted_terms_at: Mapped[datetime | None] = mapped_column(default=None)
 
     age: Mapped[int | None] = mapped_column(default=None)
     bio: Mapped[str | None] = mapped_column(Text, default=None)
@@ -23,3 +28,7 @@ class User(Base):
     latitude: Mapped[float | None] = mapped_column(default=None)
     longitude: Mapped[float | None] = mapped_column(default=None)
     photo_url: Mapped[str | None] = mapped_column(default=None)
+
+    photos: Mapped[list["UserPhoto"]] = relationship(
+        "UserPhoto", order_by="UserPhoto.position", lazy="selectin"
+    )

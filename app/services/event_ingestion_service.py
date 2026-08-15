@@ -22,6 +22,7 @@ def _apply_ingest_payload(event: Event, payload: EventIngestPayload) -> None:
     event.longitude = payload.longitude
     event.starts_at = payload.starts_at
     event.source_url = payload.source_url
+    event.image_url = payload.image_url
 
 
 def ingest_events(db: Session, batch: EventIngestBatch) -> EventIngestResult:

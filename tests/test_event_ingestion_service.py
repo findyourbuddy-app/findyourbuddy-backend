@@ -36,6 +36,16 @@ def test_ingest_creates_new_event(db_session: Session) -> None:
     assert event.title == "Trail run"
 
 
+def test_ingest_stores_image_url(db_session: Session) -> None:
+    ingest_events(
+        db_session,
+        EventIngestBatch(events=[_payload(image_url="https://example.com/evt-1.jpg")]),
+    )
+
+    event = db_session.query(Event).filter(Event.external_id == "evt-1").one()
+    assert event.image_url == "https://example.com/evt-1.jpg"
+
+
 def test_ingest_updates_existing_event_with_same_source_and_external_id(
     db_session: Session,
 ) -> None:

@@ -1,14 +1,22 @@
+import io
 from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.config import get_settings
+
+
+def _valid_png_bytes() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), color="red").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def _register_and_login(client: TestClient, email: str) -> dict[str, str]:
     client.post(
         "/auth/register",
-        json={"email": email, "password": "s3cret-pass", "display_name": email},
+        json={"email": email, "password": "s3cret-pass", "display_name": email, "accepted_terms": True},
     )
     response = client.post("/auth/login", json={"email": email, "password": "s3cret-pass"})
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
@@ -43,6 +51,47 @@ def test_create_swipe_returns_201(client: TestClient) -> None:
     )
 
     assert response.status_code == 201
+
+
+def test_create_swipe_omits_match_when_not_mutual(client: TestClient) -> None:
+    swiper_headers = _register_and_login(client, "swiper@example.com")
+    target_headers = _register_and_login(client, "target@example.com")
+    target_id = client.get("/users/me", headers=target_headers).json()["id"]
+    event_id = _create_event(client, swiper_headers)
+
+    response = client.post(
+        "/swipes/",
+        headers=swiper_headers,
+        json={"target_id": target_id, "event_id": event_id, "direction": "like"},
+    )
+
+    body = response.json()
+    assert body["match_id"] is None
+    assert body["matched_user"] is None
+
+
+def test_create_swipe_returns_match_details_on_mutual_like(client: TestClient) -> None:
+    swiper_headers = _register_and_login(client, "swiper@example.com")
+    target_headers = _register_and_login(client, "target@example.com")
+    swiper_id = client.get("/users/me", headers=swiper_headers).json()["id"]
+    target_id = client.get("/users/me", headers=target_headers).json()["id"]
+    event_id = _create_event(client, swiper_headers)
+
+    client.post(
+        "/swipes/",
+        headers=target_headers,
+        json={"target_id": swiper_id, "event_id": event_id, "direction": "like"},
+    )
+    response = client.post(
+        "/swipes/",
+        headers=swiper_headers,
+        json={"target_id": target_id, "event_id": event_id, "direction": "like"},
+    )
+
+    body = response.json()
+    assert body["match_id"] is not None
+    assert body["matched_user"]["id"] == target_id
+    assert body["matched_user"]["display_name"] == "target@example.com"
 
 
 def test_create_swipe_rejects_duplicate(client: TestClient) -> None:
@@ -100,3 +149,56 @@ def test_get_candidates_excludes_self(client: TestClient) -> None:
     assert response.status_code == 200
     candidate_ids = [user["id"] for user in response.json()]
     assert swiper_id not in candidate_ids
+
+
+def test_get_likes_received_returns_unreciprocated_likers(client: TestClient) -> None:
+    user_headers = _register_and_login(client, "user@example.com")
+    liker_headers = _register_and_login(client, "liker@example.com")
+    user_id = client.get("/users/me", headers=user_headers).json()["id"]
+    liker_id = client.get("/users/me", headers=liker_headers).json()["id"]
+    event_id = _create_event(client, user_headers)
+
+    client.post(
+        "/swipes/",
+        headers=liker_headers,
+        json={"target_id": user_id, "event_id": event_id, "direction": "like"},
+    )
+
+    response = client.get(
+        "/swipes/likes-received", headers=user_headers, params={"event_id": event_id}
+    )
+
+    assert response.status_code == 200
+    liker_ids = [user["id"] for user in response.json()]
+    assert liker_ids == [liker_id]
+
+
+def test_get_candidates_includes_gallery_photos(
+    client: TestClient, tmp_path, monkeypatch
+) -> None:
+    from app.services.media_service import get_media_storage
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
+    get_media_storage.cache_clear()
+
+    swiper_headers = _register_and_login(client, "swiper@example.com")
+    target_headers = _register_and_login(client, "target@example.com")
+    event_id = _create_event(client, swiper_headers)
+
+    client.post(
+        "/users/me/photos",
+        headers=target_headers,
+        files={"file": ("gallery1.png", io.BytesIO(_valid_png_bytes()), "image/png")},
+    )
+
+    response = client.get(
+        "/swipes/candidates", headers=swiper_headers, params={"event_id": event_id}
+    )
+
+    assert response.status_code == 200
+    candidate = next(u for u in response.json() if u["display_name"] == "target@example.com")
+    assert len(candidate["photos"]) == 1
+
+    get_settings.cache_clear()
+    get_media_storage.cache_clear()
