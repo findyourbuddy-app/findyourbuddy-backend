@@ -43,6 +43,7 @@ def delete_account(db: Session, user: User) -> None:
     user.about_me_prompt = None
     user.verification_status = "unverified"
     user.interests = []
+    user.hobbies = []
     user.latitude = None
     user.longitude = None
     user.photo_url = None

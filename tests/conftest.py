@@ -10,6 +10,7 @@ from app.core.notifications import get_notification_sender
 from app.core.rate_limit import limiter
 from app.database import Base, get_db
 from app.main import app
+import app.core.password_reset as password_reset_module
 
 
 class FakeNotificationSender:
@@ -47,6 +48,14 @@ def _reset_rate_limiter() -> Generator[None, None, None]:
     """Her testten önce sayaçları sıfırlar, testler arası çakışmayı önler."""
     limiter.reset()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_real_emails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Password reset sends a real email via the project's live Gmail SMTP
+    account -- without this, every test run spams that inbox (and any test
+    address used as a recipient)."""
+    monkeypatch.setattr(password_reset_module, "send_plain_email", lambda *a, **k: True)
 
 
 @pytest.fixture()

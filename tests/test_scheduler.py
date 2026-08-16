@@ -38,4 +38,9 @@ def test_run_cleanup_jobs_reports_deleted_counts(db_session: Session) -> None:
 
     result = run_cleanup_jobs(db_session)
 
-    assert result == {"deleted_events": 1, "deleted_tokens": 1, "feedback_notifications_sent": 0}
+    assert result == {
+        "deleted_bookmarks": 0,
+        "deleted_events": 1,
+        "deleted_tokens": 1,
+        "feedback_notifications_sent": 0,
+    }

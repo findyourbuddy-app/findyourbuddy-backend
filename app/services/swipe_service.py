@@ -150,8 +150,11 @@ def list_swipe_candidates(
     already_swiped_target_ids = db.query(Swipe.target_id).filter(
         Swipe.swiper_id == swiper_id, Swipe.event_id == event_id
     )
+    # Only approved attendees are swipeable -- someone with a still-pending
+    # group-event join request hasn't been let in yet and shouldn't show up
+    # as a candidate for other attendees (or vice versa).
     attending_user_ids = db.query(EventAttendance.user_id).filter(
-        EventAttendance.event_id == event_id
+        EventAttendance.event_id == event_id, EventAttendance.status == "approved"
     )
     excluded_ids = {swiper_id, *blocked_user_ids(db, swiper_id)}
     query = db.query(User).filter(

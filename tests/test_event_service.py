@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.bookmark import Bookmark
 from app.models.swipe import SwipeDirection
+from app.models.user import User
 from app.schemas.event import EventCreate
 from app.schemas.swipe import SwipeCreate
 from app.schemas.user import UserCreate
@@ -12,9 +13,9 @@ from app.services.bookmark_service import create_bookmark
 import pytest
 
 from app.services.event_service import (
-    DailyEventCreationLimitExceededError,
     EventCheckInOutsideWindowError,
     EventCheckInTooFarError,
+    WeeklyEventCreationLimitExceededError,
     check_in_to_event,
     create_event,
     delete_expired_events,
@@ -173,19 +174,39 @@ def test_delete_expired_events_preserves_events_with_a_match(db_session: Session
     assert event.id in {e.id for e in list_events(db_session, upcoming_only=False)}
 
 
-def test_create_event_enforces_daily_limit_for_free_users(db_session: Session) -> None:
+def test_create_event_enforces_weekly_limit_for_free_users(db_session: Session) -> None:
     creator_id = _create_user(db_session)
     create_event(db_session, _event_data(title="One"), creator_id)
     create_event(db_session, _event_data(title="Two"), creator_id)
+    create_event(db_session, _event_data(title="Three"), creator_id)
 
-    with pytest.raises(DailyEventCreationLimitExceededError):
-        create_event(db_session, _event_data(title="Three"), creator_id)
+    with pytest.raises(WeeklyEventCreationLimitExceededError):
+        create_event(db_session, _event_data(title="Four"), creator_id)
 
 
-def test_create_event_daily_limit_does_not_apply_to_premium(db_session: Session) -> None:
+def test_create_event_weekly_limit_does_not_apply_to_premium(db_session: Session) -> None:
     creator_id = _create_user(db_session)
     for i in range(4):
         create_event(db_session, _event_data(title=f"Event {i}"), creator_id, is_premium=True)
+
+
+def test_create_event_consumes_purchased_credit_past_weekly_limit(db_session: Session) -> None:
+    creator_id = _create_user(db_session)
+    creator = db_session.get(User, creator_id)
+    creator.event_credits_balance = 1
+    db_session.commit()
+    create_event(db_session, _event_data(title="One"), creator_id)
+    create_event(db_session, _event_data(title="Two"), creator_id)
+    create_event(db_session, _event_data(title="Three"), creator_id)
+
+    # The 4th creation goes past the weekly limit but should be allowed by
+    # spending the purchased credit instead of raising.
+    create_event(db_session, _event_data(title="Four"), creator_id)
+
+    db_session.refresh(creator)
+    assert creator.event_credits_balance == 0
+    with pytest.raises(WeeklyEventCreationLimitExceededError):
+        create_event(db_session, _event_data(title="Five"), creator_id)
 
 
 def test_check_in_succeeds_near_event_during_window(db_session: Session) -> None:

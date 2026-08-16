@@ -191,13 +191,14 @@ def test_check_in_rejects_when_too_far(
     assert response.status_code == 400
 
 
-def test_create_event_returns_429_after_daily_limit(
+def test_create_event_returns_429_after_weekly_limit(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     client.post("/events/", headers=auth_headers, json=_event_payload(title="One"))
     client.post("/events/", headers=auth_headers, json=_event_payload(title="Two"))
+    client.post("/events/", headers=auth_headers, json=_event_payload(title="Three"))
 
-    response = client.post("/events/", headers=auth_headers, json=_event_payload(title="Three"))
+    response = client.post("/events/", headers=auth_headers, json=_event_payload(title="Four"))
 
     assert response.status_code == 429
 

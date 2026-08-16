@@ -5,7 +5,7 @@ from app.core.deps import get_current_user
 from app.core.password_reset import PasswordResetSender, get_password_reset_sender
 from app.core.rate_limit import auth_rate_limit, limiter
 from app.core.security import create_access_token
-from app.core.sms import SmsSender, get_sms_sender
+from app.core.sms import LoggingSmsSender, SmsSender, get_sms_sender
 from app.database import get_db
 from app.models.user import User
 from app.schemas.auth import (
@@ -56,7 +56,14 @@ def register(
             status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered"
         ) from exc
     code = create_phone_verification_code(db, user)
-    sms_sender.send(user.phone_number, code)
+    sms_sender.send(user, code)
+    if isinstance(sms_sender, LoggingSmsSender):
+        # No real SMS provider is configured, so the code can only ever be
+        # read from the server logs -- don't trap the user behind a
+        # verification screen they have no way to complete.
+        user.phone_verified = True
+        db.commit()
+        db.refresh(user)
     return user
 
 
@@ -89,7 +96,7 @@ def resend_phone_code(
     if current_user.phone_verified:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone already verified")
     code = create_phone_verification_code(db, current_user)
-    sms_sender.send(current_user.phone_number, code)
+    sms_sender.send(current_user, code)
 
 
 @router.post("/login", response_model=Token)

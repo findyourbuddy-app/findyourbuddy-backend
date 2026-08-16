@@ -3,6 +3,9 @@ import re
 
 from fastapi.testclient import TestClient
 
+from app.core.sms import get_sms_sender
+from app.main import app
+
 
 def _register(client: TestClient) -> None:
     response = client.post(
@@ -71,7 +74,10 @@ def test_register_rejects_duplicate_phone_number(client: TestClient) -> None:
     assert response.status_code == 409
 
 
-def test_register_sets_phone_unverified(client: TestClient) -> None:
+def test_register_auto_verifies_phone_when_no_sms_provider_configured(client: TestClient) -> None:
+    # No real SMS provider is wired up in tests (LoggingSmsSender), so the
+    # user can never receive the code -- registration must not trap them
+    # behind an unreachable verification screen.
     response = client.post(
         "/auth/register",
         json={
@@ -83,33 +89,52 @@ def test_register_sets_phone_unverified(client: TestClient) -> None:
         },
     )
 
-    assert response.json()["phone_verified"] is False
+    assert response.json()["phone_verified"] is True
+
+
+class _FakeRealSmsSender:
+    """Stands in for a configured provider (e.g. Netgsm) so the manual
+    verify-code flow can still be exercised in tests."""
+
+    def send(self, user, code: str) -> None:
+        logging.getLogger("app.core.sms").info(
+            "phone verification code phone=%s code=%s", user.phone_number, code
+        )
 
 
 def test_verify_phone_with_correct_code_succeeds(client: TestClient, caplog) -> None:
     caplog.set_level(logging.INFO, logger="app.core.sms")
-    _register(client)
-    login = client.post("/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"})
-    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    app.dependency_overrides[get_sms_sender] = lambda: _FakeRealSmsSender()
+    try:
+        _register(client)
+        login = client.post("/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"})
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        assert client.get("/users/me", headers=headers).json()["phone_verified"] is False
 
-    match = re.search(r"code=(\d{6})", caplog.text)
-    assert match is not None
-    code = match.group(1)
+        match = re.search(r"code=(\d{6})", caplog.text)
+        assert match is not None
+        code = match.group(1)
 
-    response = client.post("/auth/phone/verify", headers=headers, json={"code": code})
+        response = client.post("/auth/phone/verify", headers=headers, json={"code": code})
 
-    assert response.status_code == 204
-    assert client.get("/users/me", headers=headers).json()["phone_verified"] is True
+        assert response.status_code == 204
+        assert client.get("/users/me", headers=headers).json()["phone_verified"] is True
+    finally:
+        del app.dependency_overrides[get_sms_sender]
 
 
 def test_verify_phone_with_wrong_code_fails(client: TestClient) -> None:
-    _register(client)
-    login = client.post("/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"})
-    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    app.dependency_overrides[get_sms_sender] = lambda: _FakeRealSmsSender()
+    try:
+        _register(client)
+        login = client.post("/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"})
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-    response = client.post("/auth/phone/verify", headers=headers, json={"code": "000000"})
+        response = client.post("/auth/phone/verify", headers=headers, json={"code": "000000"})
 
-    assert response.status_code == 400
+        assert response.status_code == 400
+    finally:
+        del app.dependency_overrides[get_sms_sender]
 
 
 def test_resend_phone_code_requires_authentication(client: TestClient) -> None:

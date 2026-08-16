@@ -28,4 +28,7 @@ class Event(Base):
     is_group_event: Mapped[bool] = mapped_column(default=False, server_default="false")
     max_attendees: Mapped[int | None] = mapped_column(default=None)
     is_paid: Mapped[bool] = mapped_column(default=False, server_default="false")
+    ticket_price: Mapped[float | None] = mapped_column(default=None)
+    is_approved: Mapped[bool] = mapped_column(default=True, server_default="true")
+    approval_rejection_reason: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)

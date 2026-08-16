@@ -6,11 +6,13 @@ from sqlalchemy.orm import Session
 from app.schemas.event import EventCreate
 from app.schemas.user import UserCreate
 from app.services.auth_service import register_user
+from app.models.event import Event
 from app.services.bookmark_service import (
     AlreadyBookmarkedError,
     BookmarkNotFoundError,
     EventNotFoundError,
     create_bookmark,
+    delete_past_event_bookmarks,
     list_bookmarks,
     remove_bookmark,
 )
@@ -109,3 +111,22 @@ def test_list_bookmarks_returns_only_my_bookmarks(db_session: Session) -> None:
     bookmark, event = result[0]
     assert bookmark.event_id == event_id
     assert event.id == event_id
+
+
+def test_delete_past_event_bookmarks_removes_only_past(db_session: Session) -> None:
+    user_id = _register(db_session, "user@example.com")
+    upcoming_event_id = _create_event(db_session, user_id)
+    past_event_id = _create_event(db_session, user_id)
+    db_session.query(Event).filter(Event.id == past_event_id).update(
+        {"starts_at": datetime.utcnow() - timedelta(days=1)}
+    )
+    db_session.commit()
+    create_bookmark(db_session, user_id, upcoming_event_id)
+    create_bookmark(db_session, user_id, past_event_id)
+
+    deleted_count = delete_past_event_bookmarks(db_session)
+
+    assert deleted_count == 1
+    remaining = list_bookmarks(db_session, user_id)
+    assert len(remaining) == 1
+    assert remaining[0][0].event_id == upcoming_event_id

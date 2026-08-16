@@ -8,6 +8,7 @@ from app.models.match_feedback import MatchFeedback
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.password_reset_token import PasswordResetToken
+from app.models.payment_callback import PaymentCallback
 from app.models.phone_verification_code import PhoneVerificationCode
 from app.models.report import Report
 from app.models.subscription import Subscription
@@ -26,6 +27,7 @@ __all__ = [
     "Message",
     "Notification",
     "PasswordResetToken",
+    "PaymentCallback",
     "PhoneVerificationCode",
     "Report",
     "Subscription",

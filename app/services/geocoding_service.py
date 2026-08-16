@@ -30,3 +30,20 @@ def search_locations(query: str, limit: int = 5) -> list[GeocodingResult]:
         )
         for item in response.json()
     ]
+
+
+def reverse_geocode(latitude: float, longitude: float) -> GeocodingResult:
+    """Reverse-geocodes a map coordinate into a human-readable place name, so
+    a point picked directly on the map (no prior search) still gets a
+    sensible label instead of raw coordinates."""
+    settings = get_settings()
+    response = httpx.get(
+        f"{settings.geocoding_base_url}/reverse",
+        params={"lat": latitude, "lon": longitude, "format": "json", "addressdetails": 0},
+        headers={"User-Agent": settings.geocoding_user_agent},
+        timeout=10.0,
+    )
+    response.raise_for_status()
+    data = response.json()
+    display_name = data.get("display_name") or f"{latitude:.5f}, {longitude:.5f}"
+    return GeocodingResult(display_name=display_name, latitude=latitude, longitude=longitude)

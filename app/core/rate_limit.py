@@ -12,4 +12,12 @@ def auth_rate_limit() -> str:
     return f"{get_settings().rate_limit_auth_per_minute}/minute"
 
 
+def messages_rate_limit() -> str:
+    return f"{get_settings().rate_limit_messages_per_minute}/minute"
+
+
+def event_writes_rate_limit() -> str:
+    return f"{get_settings().rate_limit_event_writes_per_minute}/minute"
+
+
 limiter = Limiter(key_func=get_remote_address, default_limits=[default_rate_limit])
