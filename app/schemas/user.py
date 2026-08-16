@@ -22,7 +22,7 @@ class UserCreate(BaseModel):
     display_name: str
     accepted_terms: bool
     referral_code: str | None = None
-    phone_number: str
+    phone_number: str | None = None
 
     @field_validator("accepted_terms")
     @classmethod
@@ -44,12 +44,14 @@ class UserRead(BaseModel):
     occupation: str | None = None
     university: str | None = None
     zodiac_sign: str | None = None
+    gender: str | None = None
     verification_status: str = "unverified"
     looking_for: str | None = None
     about_me_prompt: str | None = None
     voice_note_url: str | None = None
     bio: str | None = None
     interests: list[str] = []
+    hobbies: list[str] = []
     latitude: float | None = None
     longitude: float | None = None
     photo_url: str | None = None
@@ -62,7 +64,8 @@ class UserRead(BaseModel):
     boosted_until: datetime | None = None
     boosts_balance: int = 0
     extra_super_likes: int = 0
-    phone_number: str
+    event_credits_balance: int = 0
+    phone_number: str | None = None
     phone_verified: bool = False
 
 
@@ -72,13 +75,22 @@ class UserUpdate(BaseModel):
     occupation: str | None = None
     university: str | None = None
     zodiac_sign: str | None = None
+    gender: str | None = None
     looking_for: str | None = None
     about_me_prompt: str | None = None
     voice_note_url: str | None = None
     bio: str | None = None
     interests: list[str] | None = None
+    hobbies: list[str] | None = None
     latitude: float | None = None
     longitude: float | None = None
+
+    @field_validator("hobbies")
+    @classmethod
+    def _validate_hobbies_limit(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and len(value) > 4:
+            raise ValueError("En fazla 4 hobi seçebilirsiniz.")
+        return value
 
 
 class AIRecommendation(BaseModel):

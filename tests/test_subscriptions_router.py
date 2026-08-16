@@ -138,4 +138,16 @@ def test_iyzico_callback_completed(client: TestClient, db_session: Session, monk
     # Verify user was granted premium
     status_response = client.get("/subscriptions/me", headers=user_headers)
     assert status_response.json()["is_premium"] is True
+    first_expires_at = status_response.json()["expires_at"]
+
+    # A retried/duplicated callback for the same token must not extend the
+    # subscription a second time.
+    repeat_response = client.post(
+        "/subscriptions/callback",
+        data={"token": "dummy-iyzico-token"},
+    )
+    assert repeat_response.status_code == 200
+
+    status_response = client.get("/subscriptions/me", headers=user_headers)
+    assert status_response.json()["expires_at"] == first_expires_at
 

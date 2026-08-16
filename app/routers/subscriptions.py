@@ -10,6 +10,7 @@ from app.core.deps import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.schemas.subscription import SubscriptionStatus
+from app.services.payment_service import claim_payment_callback
 from app.services.subscription_service import get_subscription, grant_premium, is_premium
 
 logger = logging.getLogger(__name__)
@@ -132,9 +133,14 @@ async def iyzico_callback(
             if conv_id and conv_id.startswith("sub_"):
                 parts = conv_id.split("_")
                 user_id = int(parts[1])
-                expires = datetime.utcnow() + timedelta(days=30)
-                grant_premium(db, user_id, expires_at=expires)
-                
+                # Iyzico (or the user's browser) can call this callback more
+                # than once for the same token -- only grant the extension
+                # the first time, or a retry would stack another 30 days for
+                # free.
+                if claim_payment_callback(db, token, "subscription", user_id):
+                    expires = datetime.utcnow() + timedelta(days=30)
+                    grant_premium(db, user_id, expires_at=expires)
+
                 return responses.HTMLResponse(content="""
                     <html>
                         <head>

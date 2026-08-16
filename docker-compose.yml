@@ -16,16 +16,32 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - findyourbuddy_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: .
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/findyourbuddy
+      REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: change-me
       SCRAPER_API_KEY: change-me
       PUBLIC_BASE_URL: http://localhost:8000
@@ -35,6 +51,20 @@ services:
     command: >
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
+  scraper:
+    build: ../findyourbuddy-scraping
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    environment:
+      BACKEND_API_URL: http://backend:8000
+      SCRAPER_API_KEY: change-me
+      GEOCODING_USER_AGENT: findyourbuddy-scraper/0.1 (change-me@example.com)
+      ETKINLIK_IO_API_TOKEN: ""
+      GEMINI_API_KEY: ""
+
 volumes:
   findyourbuddy_pgdata:
   findyourbuddy_media:
+  findyourbuddy_redisdata:

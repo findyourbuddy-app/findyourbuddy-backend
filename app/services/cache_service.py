@@ -23,12 +23,15 @@ class CacheService:
                 return None
                 
             try:
-                # Initialize Redis client with 1-second timeout
+                # Short timeouts + _connection_failed latching below mean an
+                # unreachable Redis costs one slow request at most, not a
+                # per-request stall -- every call after the first failure
+                # skips Redis entirely and goes straight to Postgres.
                 cls._client = redis.from_url(
-                    settings.redis_url, 
-                    decode_responses=True, 
-                    socket_timeout=1.0,
-                    socket_connect_timeout=1.0
+                    settings.redis_url,
+                    decode_responses=True,
+                    socket_timeout=0.3,
+                    socket_connect_timeout=0.3,
                 )
                 cls._client.ping()
                 logger.info("Connected to Redis successfully for caching.")

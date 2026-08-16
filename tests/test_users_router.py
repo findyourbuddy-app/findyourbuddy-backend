@@ -1,5 +1,7 @@
 import io
+import json
 
+import iyzipay
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -8,6 +10,35 @@ def _valid_png_bytes() -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", (2, 2), color="red").save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def _mock_purchase_via_iyzico(
+    client: TestClient, monkeypatch, user_id: int, item_type: str, quantity: int, token: str
+) -> None:
+    """Simulates a completed Iyzico checkout by mocking CheckoutForm.retrieve
+    and hitting the callback directly -- purchases only take effect once the
+    callback verifies payment, not from the checkout-session call itself."""
+    dummy_body = json.dumps(
+        {
+            "status": "success",
+            "paymentStatus": "SUCCESS",
+            "conversationId": f"purchase_{item_type}_{quantity}_{user_id}_12345678",
+        }
+    ).encode("utf-8")
+
+    class FakeHTTPResponse:
+        @staticmethod
+        def read():
+            return dummy_body
+
+    class MockRetrieve:
+        @staticmethod
+        def retrieve(request_data, options):
+            return FakeHTTPResponse()
+
+    monkeypatch.setattr(iyzipay, "CheckoutForm", lambda: MockRetrieve())
+    response = client.post("/users/me/purchase/callback", data={"token": token})
+    assert response.status_code == 200
 
 
 def test_read_current_user_requires_auth(client: TestClient) -> None:
@@ -308,36 +339,26 @@ def test_boost_user_without_credits_returns_403(
 
 
 def test_purchase_items_credits_balance(
-    client: TestClient, auth_headers: dict[str, str]
+    client: TestClient, auth_headers: dict[str, str], monkeypatch
 ) -> None:
-    # Purchase 2 boosts
-    response = client.post(
-        "/users/me/purchase",
-        headers=auth_headers,
-        json={"item_type": "boost", "quantity": 2},
-    )
-    assert response.status_code == 200
+    user_id = client.get("/users/me", headers=auth_headers).json()["id"]
+
+    _mock_purchase_via_iyzico(client, monkeypatch, user_id, "boost", 2, token="tok-boost")
+    response = client.get("/users/me", headers=auth_headers)
     assert response.json()["boosts_balance"] == 2
 
-    # Purchase 5 extra super likes
-    response = client.post(
-        "/users/me/purchase",
-        headers=auth_headers,
-        json={"item_type": "super_likes", "quantity": 5},
-    )
-    assert response.status_code == 200
+    _mock_purchase_via_iyzico(client, monkeypatch, user_id, "super_likes", 5, token="tok-super")
+    response = client.get("/users/me", headers=auth_headers)
     assert response.json()["extra_super_likes"] == 5
 
 
 def test_boost_user_with_credits_succeeds(
-    client: TestClient, auth_headers: dict[str, str]
+    client: TestClient, auth_headers: dict[str, str], monkeypatch
 ) -> None:
+    user_id = client.get("/users/me", headers=auth_headers).json()["id"]
+
     # First buy a boost
-    client.post(
-        "/users/me/purchase",
-        headers=auth_headers,
-        json={"item_type": "boost", "quantity": 1},
-    )
+    _mock_purchase_via_iyzico(client, monkeypatch, user_id, "boost", 1, token="tok-boost-2")
 
     # Boost profile
     response = client.post("/users/me/boost", headers=auth_headers)

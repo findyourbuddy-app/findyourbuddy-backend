@@ -17,7 +17,7 @@ CHECK_IN_RADIUS_KM = 1.0
 CHECK_IN_TRUST_SCORE_BONUS = 1
 
 
-class DailyEventCreationLimitExceededError(Exception):
+class WeeklyEventCreationLimitExceededError(Exception):
     pass
 
 
@@ -29,11 +29,11 @@ class EventCheckInOutsideWindowError(Exception):
     pass
 
 
-def count_events_created_today(db: Session, creator_id: int) -> int:
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+def count_events_created_this_week(db: Session, creator_id: int) -> int:
+    week_start = datetime.utcnow() - timedelta(days=7)
     return (
         db.query(Event)
-        .filter(Event.creator_id == creator_id, Event.created_at >= today_start)
+        .filter(Event.creator_id == creator_id, Event.created_at >= week_start)
         .count()
     )
 
@@ -41,14 +41,27 @@ def count_events_created_today(db: Session, creator_id: int) -> int:
 def create_event(db: Session, data: EventCreate, creator_id: int, is_premium: bool = False) -> Event:
     if not is_premium:
         settings = get_settings()
-        if count_events_created_today(db, creator_id) >= settings.daily_event_creation_limit:
-            raise DailyEventCreationLimitExceededError(creator_id)
+        if count_events_created_this_week(db, creator_id) >= settings.weekly_event_creation_limit:
+            creator = db.get(User, creator_id)
+            if creator is None or creator.event_credits_balance <= 0:
+                raise WeeklyEventCreationLimitExceededError(creator_id)
+            creator.event_credits_balance -= 1
 
     event = Event(**data.model_dump(), creator_id=creator_id)
     db.add(event)
     db.commit()
     db.refresh(event)
     return event
+
+
+def grant_event_credits(db: Session, user_id: int, amount: int) -> User:
+    user = db.get(User, user_id)
+    if user is None:
+        raise ValueError(f"User {user_id} not found")
+    user.event_credits_balance += amount
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def get_event(db: Session, event_id: int) -> Event | None:
@@ -160,7 +173,7 @@ def list_attending_events(db: Session, user_id: int, upcoming_only: bool = True)
     query = (
         db.query(Event)
         .join(EventAttendance, EventAttendance.event_id == Event.id)
-        .filter(EventAttendance.user_id == user_id)
+        .filter(EventAttendance.user_id == user_id, EventAttendance.status == "approved")
     )
     if upcoming_only:
         query = query.filter(Event.starts_at >= datetime.utcnow())

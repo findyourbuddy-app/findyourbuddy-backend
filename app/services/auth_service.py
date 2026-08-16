@@ -55,8 +55,13 @@ def _generate_referral_code(db: Session) -> str:
 def register_user(db: Session, data: UserCreate) -> User:
     if db.query(User).filter(User.email == data.email).first() is not None:
         raise EmailAlreadyRegisteredError(data.email)
-    if db.query(User).filter(User.phone_number == data.phone_number).first() is not None:
-        raise PhoneNumberAlreadyRegisteredError(data.phone_number)
+    
+    phone = data.phone_number.strip() if data.phone_number and data.phone_number.strip() else None
+    if phone:
+        if db.query(User).filter(User.phone_number == phone).first() is not None:
+            raise PhoneNumberAlreadyRegisteredError(phone)
+    else:
+        phone = f"unknown-{secrets.token_hex(6)}"
 
     inviter: User | None = None
     if data.referral_code:
@@ -72,8 +77,9 @@ def register_user(db: Session, data: UserCreate) -> User:
         referral_code=_generate_referral_code(db),
         referred_by_id=inviter.id if inviter is not None else None,
         bonus_swipe_credits=REFERRAL_BONUS_SWIPES if inviter is not None else 0,
-        phone_number=data.phone_number,
+        phone_number=phone,
         phone_verified=False,
+        hobbies=[],
     )
     db.add(user)
     if inviter is not None:

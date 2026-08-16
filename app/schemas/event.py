@@ -15,6 +15,7 @@ class EventCreate(BaseModel):
     is_group_event: bool = False
     max_attendees: int | None = None
     is_paid: bool = False
+    ticket_price: float | None = None
 
 
 class EventRead(BaseModel):
@@ -37,6 +38,7 @@ class EventRead(BaseModel):
     is_group_event: bool
     max_attendees: int | None = None
     is_paid: bool = False
+    ticket_price: float | None = None
     created_at: datetime
     attendee_count: int = 0
     is_attending: bool = False
@@ -53,3 +55,10 @@ class EventTicketRead(BaseModel):
     ticket_image_url: str | None
     ticket_decoded_text: str | None
     is_ticket_verified: bool
+
+
+class EventCreationQuota(BaseModel):
+    is_premium: bool
+    events_created_this_week: int
+    weekly_limit: int | None
+    credits_balance: int

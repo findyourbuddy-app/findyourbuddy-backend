@@ -58,9 +58,50 @@ def _existing_match(db: Session, user_a_id: int, user_b_id: int, event_id: int) 
 
 
 def _interest_score(user_a: User, user_b: User) -> float:
-    shared = set(user_a.interests) & set(user_b.interests)
-    total = set(user_a.interests) | set(user_b.interests)
-    return len(shared) / len(total) if total else 0.0
+    user_a_interests = user_a.interests or []
+    user_b_interests = user_b.interests or []
+    shared_interests = set(user_a_interests) & set(user_b_interests)
+    total_interests = set(user_a_interests) | set(user_b_interests)
+    interest_jaccard = len(shared_interests) / len(total_interests) if total_interests else 0.0
+
+    user_a_hobbies = user_a.hobbies or []
+    user_b_hobbies = user_b.hobbies or []
+    shared_hobbies = set(user_a_hobbies) & set(user_b_hobbies)
+    total_hobbies = set(user_a_hobbies) | set(user_b_hobbies)
+    hobby_jaccard = len(shared_hobbies) / len(total_hobbies) if total_hobbies else 0.0
+
+    if total_interests and total_hobbies:
+        return 0.5 * interest_jaccard + 0.5 * hobby_jaccard
+    elif total_hobbies:
+        return hobby_jaccard
+    return interest_jaccard
+
+
+_ZODIAC_ELEMENTS = {
+    "Koç": "Ateş", "Aslan": "Ateş", "Yay": "Ateş",
+    "Boğa": "Toprak", "Başak": "Toprak", "Oğlak": "Toprak",
+    "İkizler": "Hava", "Terazi": "Hava", "Kova": "Hava",
+    "Yengeç": "Su", "Akrep": "Su", "Balık": "Su",
+}
+
+_ELEMENT_SYNERGY = {
+    ("Ateş", "Ateş"): 1.0, ("Ateş", "Hava"): 1.0, ("Ateş", "Toprak"): 0.5, ("Ateş", "Su"): 0.3,
+    ("Toprak", "Toprak"): 1.0, ("Toprak", "Su"): 1.0, ("Toprak", "Hava"): 0.5, ("Toprak", "Ateş"): 0.5,
+    ("Hava", "Hava"): 1.0, ("Hava", "Ateş"): 1.0, ("Hava", "Su"): 0.5, ("Hava", "Toprak"): 0.5,
+    ("Su", "Su"): 1.0, ("Su", "Toprak"): 1.0, ("Su", "Ateş"): 0.3, ("Su", "Hava"): 0.5,
+}
+
+
+def _zodiac_score(user_a: User, user_b: User) -> float:
+    z1 = user_a.zodiac_sign
+    z2 = user_b.zodiac_sign
+    if not z1 or not z2:
+        return 0.0
+    elem1 = _ZODIAC_ELEMENTS.get(z1)
+    elem2 = _ZODIAC_ELEMENTS.get(z2)
+    if not elem1 or not elem2:
+        return 0.0
+    return _ELEMENT_SYNERGY.get((elem1, elem2), 0.5)
 
 
 def _distance_score(user_a: User, user_b: User) -> float:
@@ -85,10 +126,11 @@ def _calculate_score(db: Session, user_a_id: int, user_b_id: int) -> float:
     user_b = db.get(User, user_b_id)
     settings = get_settings()
 
-    return (
-        settings.match_common_interest_weight * _interest_score(user_a, user_b)
-        + settings.match_distance_weight * _distance_score(user_a, user_b)
-    )
+    interest_part = settings.match_common_interest_weight * _interest_score(user_a, user_b)
+    distance_part = settings.match_distance_weight * _distance_score(user_a, user_b)
+    zodiac_part = 0.2 * _zodiac_score(user_a, user_b)
+
+    return interest_part + distance_part + zodiac_part
 
 
 def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int) -> Match | None:

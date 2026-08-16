@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
 from app.core.notifications import NotificationSender, get_notification_sender
+from app.core.rate_limit import limiter, messages_rate_limit
 from app.database import get_db
 from app.models.match import Match
 from app.models.message import Message
@@ -45,7 +46,9 @@ def get_messages(
 
 
 @router.post("/", response_model=MessageRead, status_code=status.HTTP_201_CREATED)
+@limiter.limit(messages_rate_limit)
 def post_message(
+    request: Request,
     match_id: int,
     data: MessageCreate,
     current_user: User = Depends(get_current_user),

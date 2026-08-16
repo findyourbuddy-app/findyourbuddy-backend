@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.core.deps import get_current_user
 from app.models.user import User
 from app.schemas.geocoding import GeocodingResultRead
-from app.services.geocoding_service import search_locations
+from app.services.geocoding_service import reverse_geocode, search_locations
 
 router = APIRouter(prefix="/geocoding", tags=["geocoding"])
 
@@ -24,3 +24,15 @@ def search(
         )
         for r in results
     ]
+
+
+@router.get("/reverse", response_model=GeocodingResultRead)
+def reverse(
+    lat: float,
+    lon: float,
+    _current_user: User = Depends(get_current_user),
+) -> GeocodingResultRead:
+    result = reverse_geocode(lat, lon)
+    return GeocodingResultRead(
+        display_name=result.display_name, latitude=result.latitude, longitude=result.longitude
+    )
