@@ -38,6 +38,9 @@ def count_events_created_this_week(db: Session, creator_id: int) -> int:
     )
 
 
+from app.services.llm_moderation_service import moderate_new_event
+
+
 def create_event(db: Session, data: EventCreate, creator_id: int, is_premium: bool = False) -> Event:
     if not is_premium:
         settings = get_settings()
@@ -51,7 +54,7 @@ def create_event(db: Session, data: EventCreate, creator_id: int, is_premium: bo
     db.add(event)
     db.commit()
     db.refresh(event)
-    return event
+    return moderate_new_event(db, event)
 
 
 def grant_event_credits(db: Session, user_id: int, amount: int) -> User:
@@ -75,7 +78,7 @@ def list_events(
     skip: int = 0,
     limit: int = 50,
 ) -> list[Event]:
-    query = db.query(Event)
+    query = db.query(Event).filter(Event.is_approved.isnot(False))
     if category is not None:
         query = query.filter(Event.category == category)
     if upcoming_only:

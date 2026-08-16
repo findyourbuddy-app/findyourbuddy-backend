@@ -193,20 +193,31 @@ def delete_my_photo(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found") from exc
 
 
-@router.post("/me/verify", response_model=UserRead)
-def request_profile_verification(
+class VerifyPhotoPayload(BaseModel):
+    selfie_photo_url: str
+
+
+@router.post("/me/verify-photo")
+def verify_user_photo(
+    payload: VerifyPhotoPayload,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> User:
-    if current_user.verification_status in ("verified", "pending"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Verification already {current_user.verification_status}"
-        )
-    current_user.verification_status = "pending"
-    db.commit()
-    db.refresh(current_user)
-    return current_user
+):
+    from app.services.vision_verification_service import verify_user_photo_with_vision
+    return verify_user_photo_with_vision(db, current_user, payload.selfie_photo_url)
+
+
+@router.get("/ai-match-llm/{target_user_id}")
+def get_ai_match_llm(
+    target_user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.llm_matching_service import generate_llm_kanka_synergy
+    target_user = db.get(User, target_user_id)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+    return generate_llm_kanka_synergy(current_user, target_user)
 
 
 ZODIAC_ELEMENTS = {

@@ -31,6 +31,8 @@ def list_my_matches(
         MatchRead(
             id=match.id,
             event_id=match.event_id,
+            event_title=match.event.title if match.event else None,
+            event_category=match.event.category if match.event else None,
             user_a_id=match.user_a_id,
             user_b_id=match.user_b_id,
             score=match.score,

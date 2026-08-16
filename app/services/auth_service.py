@@ -53,8 +53,9 @@ def _generate_referral_code(db: Session) -> str:
 
 
 def register_user(db: Session, data: UserCreate) -> User:
-    if db.query(User).filter(User.email == data.email).first() is not None:
-        raise EmailAlreadyRegisteredError(data.email)
+    normalized_email = data.email.strip().lower()
+    if db.query(User).filter(User.email == normalized_email).first() is not None:
+        raise EmailAlreadyRegisteredError(normalized_email)
     
     phone = data.phone_number.strip() if data.phone_number and data.phone_number.strip() else None
     if phone:
@@ -70,7 +71,7 @@ def register_user(db: Session, data: UserCreate) -> User:
         )
 
     user = User(
-        email=data.email,
+        email=normalized_email,
         hashed_password=hash_password(data.password),
         display_name=data.display_name,
         accepted_terms_at=datetime.utcnow(),
@@ -122,14 +123,16 @@ def verify_phone_code(db: Session, user: User, code: str) -> None:
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User:
-    user = db.query(User).filter(User.email == email).first()
+    normalized_email = email.strip().lower()
+    user = db.query(User).filter(User.email == normalized_email).first()
     if user is None or not user.is_active or not verify_password(password, user.hashed_password):
-        raise InvalidCredentialsError(email)
+        raise InvalidCredentialsError(normalized_email)
     return user
 
 
 def request_password_reset(db: Session, email: str) -> str | None:
-    user = db.query(User).filter(User.email == email, User.is_active.is_(True)).first()
+    normalized_email = email.strip().lower()
+    user = db.query(User).filter(User.email == normalized_email, User.is_active.is_(True)).first()
     if user is None:
         return None
 

@@ -40,6 +40,11 @@ class Settings(BaseSettings):
 
     moderation_banned_words: str = "spam,scam"
 
+    novita_api_key: str = ""
+    novita_base_url: str = "https://api.novita.ai/v3/openai"
+    novita_model: str = "deepseek/deepseek-r1-distill-llama-70b"
+    novita_vision_model: str = "meta-llama/llama-3.2-11b-vision-instruct"
+
     scraper_api_key: str
     allowed_event_categories: list[str] = [
         "running",

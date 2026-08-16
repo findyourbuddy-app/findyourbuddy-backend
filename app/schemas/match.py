@@ -11,6 +11,8 @@ class MatchRead(BaseModel):
 
     id: int
     event_id: int
+    event_title: str | None = None
+    event_category: str | None = None
     user_a_id: int
     user_b_id: int
     score: float

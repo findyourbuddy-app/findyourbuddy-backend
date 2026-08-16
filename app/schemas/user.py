@@ -14,6 +14,7 @@ class UserPublic(BaseModel):
     photo_url: str | None = None
     trust_score: int = 0
     university: str | None = None
+    is_verified: bool = False
 
 
 class UserCreate(BaseModel):
@@ -67,6 +68,7 @@ class UserRead(BaseModel):
     event_credits_balance: int = 0
     phone_number: str | None = None
     phone_verified: bool = False
+    is_verified: bool = False
 
 
 class UserUpdate(BaseModel):
