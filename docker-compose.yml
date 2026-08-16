@@ -1,7 +1,12 @@
 services:
+  # Opt-in local Postgres, not started by default -- the backend now points
+  # at the real Supabase database via .env's DATABASE_URL. Bring this up
+  # explicitly with `docker compose --profile local-db up` if you want an
+  # isolated local database instead.
   db:
     image: postgres:17
     restart: unless-stopped
+    profiles: ["local-db"]
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
@@ -33,19 +38,16 @@ services:
     build: .
     restart: unless-stopped
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql://user:password@db:5432/findyourbuddy
+      # Overrides .env's REDIS_URL (which is set for the native/non-Docker run)
+      # so the containerized backend always talks to the redis service by name.
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET_KEY: change-me
-      SCRAPER_API_KEY: change-me
-      PUBLIC_BASE_URL: http://localhost:8000
-      ENVIRONMENT: development
     volumes:
       - findyourbuddy_media:/app/media
     command: >
@@ -57,12 +59,12 @@ services:
     depends_on:
       backend:
         condition: service_started
+    env_file:
+      - ../findyourbuddy-scraping/.env
     environment:
+      # Overrides .env's BACKEND_API_URL (set for the native/non-Docker run)
+      # so the scraper reaches the backend service by its container name.
       BACKEND_API_URL: http://backend:8000
-      SCRAPER_API_KEY: change-me
-      GEOCODING_USER_AGENT: findyourbuddy-scraper/0.1 (change-me@example.com)
-      ETKINLIK_IO_API_TOKEN: ""
-      GEMINI_API_KEY: ""
 
 volumes:
   findyourbuddy_pgdata:
