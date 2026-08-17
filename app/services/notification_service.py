@@ -7,8 +7,8 @@ from app.models.notification import Notification
 
 
 def notify_match_created(db: Session, sender: NotificationSender, match: Match) -> None:
-    body = "You have a new match on FindYourBuddy."
-    title = "New match!"
+    body = "FindYourBuddy'de yeni bir kanka eşleşmen var!"
+    title = "Yeni Eşleşme! 🎉"
     for user_id in (match.user_a_id, match.user_b_id):
         sender.send(user_id, title, body)
         db.add(Notification(user_id=user_id, title=title, body=body))
@@ -16,8 +16,8 @@ def notify_match_created(db: Session, sender: NotificationSender, match: Match) 
 
 
 def notify_new_message(db: Session, sender: NotificationSender, message: Message, recipient_id: int) -> None:
-    title = "New message"
-    body = "You have a new message."
+    title = "Yeni Mesaj 💬"
+    body = "Sana yeni bir mesaj geldi."
     sender.send(recipient_id, title, body)
     db.add(Notification(user_id=recipient_id, title=title, body=body))
     db.commit()

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     iyzico_base_url: str = "sandbox-api.iyzipay.com"
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 60 * 24
+    jwt_expire_minutes: int = 60 * 24 * 30
 
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
@@ -41,15 +41,16 @@ class Settings(BaseSettings):
     moderation_banned_words: str = "spam,scam"
 
     novita_api_key: str = ""
-    novita_base_url: str = "https://api.novita.ai/v3/openai"
-    novita_model: str = "deepseek/deepseek-r1-distill-llama-70b"
-    novita_vision_model: str = "meta-llama/llama-3.2-11b-vision-instruct"
+    novita_base_url: str = "https://api.novita.ai/openai"
+    novita_model: str = "deepseek/deepseek-v4-flash"
+    novita_vision_model: str = "qwen/qwen3.6-27b"
 
     scraper_api_key: str
     allowed_event_categories: list[str] = [
         "running",
         "coffee",
         "concert",
+        "festival",
         "climbing",
         "hiking",
         "cycling",
@@ -93,7 +94,7 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     environment: str = "development"
 
-    event_retention_days: int = 30
+    event_retention_days: int = 0
     scheduler_interval_hours: float = 6.0
 
     geocoding_base_url: str = "https://nominatim.openstreetmap.org"
