@@ -90,7 +90,35 @@ services:
       # so the scraper reaches the backend service by its container name.
       BACKEND_API_URL: http://backend:8000
 
+  # Opt-in HTTPS edge for real server deployment -- iOS App Store builds
+  # require plain HTTP is off by default (ATS), so production traffic must
+  # terminate TLS somewhere. Caddy gets a cert from Let's Encrypt automatically
+  # for API_DOMAIN and proxies to the backend over the internal network.
+  # Bring up with: docker compose --profile production up -d
+  # Requires API_DOMAIN (a real domain pointed at this server's IP) and
+  # CADDY_EMAIL (for Let's Encrypt expiry notices) set in .env.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ["production"]
+    logging: *default-logging
+    mem_limit: 128m
+    depends_on:
+      backend:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - findyourbuddy_caddy_data:/data
+      - findyourbuddy_caddy_config:/config
+
 volumes:
   findyourbuddy_pgdata:
   findyourbuddy_media:
   findyourbuddy_redisdata:
+  findyourbuddy_caddy_data:
+  findyourbuddy_caddy_config:
