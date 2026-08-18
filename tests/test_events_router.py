@@ -1,31 +1,6 @@
-import io
 from datetime import datetime, timedelta
 
-import cv2
-import numpy as np
 from fastapi.testclient import TestClient
-from PIL import Image
-
-from app.config import get_settings
-from app.services.media_service import get_media_storage
-
-
-def _qr_png_bytes(text: str) -> bytes:
-    encoder = cv2.QRCodeEncoder.create()
-    matrix = encoder.encode(text)
-    scale = 10
-    big = cv2.resize(
-        matrix, (matrix.shape[1] * scale, matrix.shape[0] * scale), interpolation=cv2.INTER_NEAREST
-    )
-    padded = cv2.copyMakeBorder(big, 40, 40, 40, 40, cv2.BORDER_CONSTANT, value=255)
-    ok, buf = cv2.imencode(".png", padded)
-    return buf.tobytes()
-
-
-def _plain_png_bytes() -> bytes:
-    buffer = io.BytesIO()
-    Image.new("RGB", (20, 20), color="blue").save(buffer, format="PNG")
-    return buffer.getvalue()
 
 
 def _event_payload(**overrides: object) -> dict[str, object]:
@@ -203,55 +178,6 @@ def test_create_event_returns_429_after_weekly_limit(
     assert response.status_code == 429
 
 
-def test_upload_ticket_with_readable_qr_verifies_attendance(
-    client: TestClient, auth_headers: dict[str, str], tmp_path, monkeypatch
-) -> None:
-    monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
-    get_settings.cache_clear()
-    get_media_storage.cache_clear()
-
-    create_response = client.post(
-        "/events/", headers=auth_headers, json=_event_payload(is_paid=True)
-    )
-    event_id = create_response.json()["id"]
-
-    response = client.post(
-        f"/events/{event_id}/ticket",
-        headers=auth_headers,
-        files={"file": ("ticket.png", io.BytesIO(_qr_png_bytes("TICKET-XYZ")), "image/png")},
-    )
-
-    assert response.status_code == 200
-    assert response.json()["is_ticket_verified"] is True
-
-    get_settings.cache_clear()
-    get_media_storage.cache_clear()
-
-
-def test_upload_ticket_with_unreadable_image_returns_422(
-    client: TestClient, auth_headers: dict[str, str], tmp_path, monkeypatch
-) -> None:
-    monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
-    get_settings.cache_clear()
-    get_media_storage.cache_clear()
-
-    create_response = client.post(
-        "/events/", headers=auth_headers, json=_event_payload(is_paid=True)
-    )
-    event_id = create_response.json()["id"]
-
-    response = client.post(
-        f"/events/{event_id}/ticket",
-        headers=auth_headers,
-        files={"file": ("blank.png", io.BytesIO(_plain_png_bytes()), "image/png")},
-    )
-
-    assert response.status_code == 422
-
-    get_settings.cache_clear()
-    get_media_storage.cache_clear()
-
-
 def test_list_attending_events_returns_only_joined_events(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
@@ -277,3 +203,23 @@ def test_read_event_is_attending_false_for_non_attendee(
     response = client.get(f"/events/{event_id}", headers=auth_headers)
 
     assert response.json()["is_attending"] is False
+
+
+def test_create_event_sanitizes_xss_description(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    xss_payload = _event_payload(
+        title="XSS Test Event",
+        description="Great event <script>alert(1)</script> Join us!",
+    )
+    create_response = client.post("/events/", headers=auth_headers, json=xss_payload)
+    assert create_response.status_code == 201
+    event_id = create_response.json()["id"]
+
+    get_response = client.get(f"/events/{event_id}", headers=auth_headers)
+    assert get_response.status_code == 200
+    cleaned_desc = get_response.json()["description"]
+    assert "<script>" not in cleaned_desc
+    assert "</script>" not in cleaned_desc
+    assert "alert(1)" in cleaned_desc
+

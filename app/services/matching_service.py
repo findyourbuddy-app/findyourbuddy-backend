@@ -199,14 +199,19 @@ def list_matches_with_details(
     match_ids = [m.id for m in matches]
     last_messages_by_match_id: dict[int, Message] = {}
     if match_ids:
-        subq = (
+        # DISTINCT ON (via .distinct(column)) is Postgres-only and is
+        # silently ignored on other dialects (e.g. SQLite in tests), which
+        # would leave the *oldest* message per match rather than the
+        # newest. Sorting ascending and letting later writes overwrite
+        # earlier ones in the dict is portable across every backend.
+        messages = (
             db.query(Message)
             .filter(Message.match_id.in_(match_ids))
-            .order_by(Message.match_id, Message.created_at.desc())
-            .distinct(Message.match_id)
+            .order_by(Message.created_at.asc())
             .all()
         )
-        last_messages_by_match_id = {msg.match_id: msg for msg in subq}
+        for message in messages:
+            last_messages_by_match_id[message.match_id] = message
 
     return [
         (match, users_by_id[_other_user_id(match, user_id)], last_messages_by_match_id.get(match.id))

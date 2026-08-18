@@ -4,12 +4,13 @@ import logging
 from datetime import datetime
 
 import iyzipay
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, responses, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, responses, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.deps import get_current_user
+from app.core.rate_limit import ai_rate_limit, limiter
 from app.database import get_db
 from app.models.user import User
 from app.models.user_photo import UserPhoto
@@ -198,7 +199,9 @@ class VerifyPhotoPayload(BaseModel):
 
 
 @router.post("/me/verify-photo")
+@limiter.limit(ai_rate_limit)
 def verify_user_photo(
+    request: Request,
     payload: VerifyPhotoPayload,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -208,7 +211,9 @@ def verify_user_photo(
 
 
 @router.get("/ai-match-llm/{target_user_id}")
+@limiter.limit(ai_rate_limit)
 def get_ai_match_llm(
+    request: Request,
     target_user_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -315,7 +320,7 @@ def get_ai_recommendations(
 
 class PurchaseRequest(BaseModel):
     item_type: str  # "boost", "super_likes", "swipes"
-    quantity: int = 1
+    quantity: int = Field(default=1, ge=1, le=20)
 
 
 @router.post("/me/boost", response_model=UserRead)
@@ -357,7 +362,12 @@ def create_purchase_checkout_session(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid item type")
 
     settings = get_settings()
-    price = PURCHASE_ITEM_PRICES_TRY[payload.item_type]
+    # PURCHASE_ITEM_PRICES_TRY values are strings ("39.00") for Iyzico's
+    # request format -- multiply as a number, then reformat, or this becomes
+    # string repetition ("39.00" * 3 == "39.0039.0039.00"). quantity is
+    # capped (1-20) by the schema, so this can't overflow into an absurd total.
+    unit_price = float(PURCHASE_ITEM_PRICES_TRY[payload.item_type])
+    price = f"{unit_price * payload.quantity:.2f}"
     options = {
         "api_key": settings.iyzico_api_key,
         "secret_key": settings.iyzico_secret_key,
@@ -452,9 +462,10 @@ async def purchase_callback(
                 remainder = conv_id[len("purchase_"):]
                 item_type, quantity, user_id, _timestamp = remainder.rsplit("_", 3)
                 
-                expected_price = PURCHASE_ITEM_PRICES_TRY.get(item_type)
+                unit_price = PURCHASE_ITEM_PRICES_TRY.get(item_type)
+                expected_price = float(unit_price) * int(quantity) if unit_price else None
                 paid_price = str(checkout_form.get("paidPrice") or checkout_form.get("price") or "")
-                if expected_price and paid_price and float(paid_price) < float(expected_price):
+                if expected_price and paid_price and float(paid_price) < expected_price:
                     logger.warning(f"Price mismatch in store purchase callback: expected {expected_price}, got {paid_price}")
                     return responses.HTMLResponse(content="<html><body><h1>Ödeme Tutarı Geçersiz</h1></body></html>", status_code=400)
 

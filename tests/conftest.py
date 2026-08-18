@@ -10,6 +10,7 @@ from app.core.notifications import get_notification_sender
 from app.core.rate_limit import limiter
 from app.database import Base, get_db
 from app.main import app
+import app.core.email as email_module
 import app.core.password_reset as password_reset_module
 
 
@@ -52,10 +53,14 @@ def _reset_rate_limiter() -> Generator[None, None, None]:
 
 @pytest.fixture(autouse=True)
 def _no_real_emails(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Password reset sends a real email via the project's live Gmail SMTP
-    account -- without this, every test run spams that inbox (and any test
-    address used as a recipient)."""
+    """Several flows (password reset, event moderation approve/reject) send
+    real email via the project's live Gmail SMTP account -- without this,
+    every test run spams that inbox (and any test address used as a
+    recipient). Every email send in the app routes through app.core.email,
+    so mocking these two covers all of them."""
     monkeypatch.setattr(password_reset_module, "send_plain_email", lambda *a, **k: True)
+    monkeypatch.setattr(email_module, "send_plain_email", lambda *a, **k: True)
+    monkeypatch.setattr(email_module, "send_html_email", lambda *a, **k: True)
 
 
 @pytest.fixture()

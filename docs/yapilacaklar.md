@@ -11,7 +11,11 @@ iyileştirme).
 
 ---
 
-## 1. [P0] Bağımlılık yönetimini pip+requirements.txt'ten uv'ye taşı
+## 1. [TAMAMLANDI] Bağımlılık yönetimini pip+requirements.txt'ten uv'ye taşı
+
+> Bu görev tamamlandı: `requirements.txt` yok, `pyproject.toml` + `uv.lock`
+> var, Docker build'i de `uv sync --frozen --no-dev` kullanıyor. Aşağıdaki
+> adımlar arşiv amaçlı bırakıldı.
 
 ### Neden
 Proje standardı Poetry veya uv olacak şekilde belirlendi; pip +

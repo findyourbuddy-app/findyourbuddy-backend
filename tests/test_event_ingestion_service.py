@@ -1,10 +1,24 @@
 from datetime import datetime, timedelta
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.models.event import Event
 from app.schemas.event_ingestion import EventIngestBatch, EventIngestPayload
 from app.services.event_ingestion_service import ingest_events
+
+
+@pytest.fixture(autouse=True)
+def _no_real_llm_classification(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests assert on invalid-category handling, not on what a real
+    LLM happens to classify a fake title as -- without this, whether an
+    invalid category gets "rescued" into a real one depends on whether
+    NOVITA_API_KEY is set in whatever environment the test runs in (a real,
+    billed network call locally; empty/skipped in CI), making the test
+    non-deterministic. Force the "couldn't classify" fallback every time."""
+    import app.services.event_ingestion_service as ingestion_module
+
+    monkeypatch.setattr(ingestion_module, "auto_classify_event_category_with_llm", lambda *a, **k: "other")
 
 
 def _payload(**overrides: object) -> EventIngestPayload:

@@ -27,10 +27,30 @@ def update_profile(db: Session, user: User, data: UserUpdate) -> User:
     return user
 
 
+from app.services.media_service import get_media_storage
+
+
 def delete_account(db: Session, user: User) -> None:
     """Soft-deletes the account: deactivates login, scrubs personal data,
     and frees up the email for reuse. Matches/messages/events the user was
     part of are left intact for the other side's history."""
+    media_storage = get_media_storage()
+
+    # Delete main profile photo and voice note from storage if present
+    if user.photo_url:
+        media_storage.delete(user.photo_url)
+        user.photo_url = None
+    if user.voice_note_url:
+        media_storage.delete(user.voice_note_url)
+        user.voice_note_url = None
+
+    # Delete additional user photos from storage and DB
+    user_photos = db.query(UserPhoto).filter(UserPhoto.user_id == user.id).all()
+    for photo in user_photos:
+        if photo.photo_url:
+            media_storage.delete(photo.photo_url)
+    db.query(UserPhoto).filter(UserPhoto.user_id == user.id).delete()
+
     user.is_active = False
     user.email = f"deleted-user-{user.id}-{secrets.token_hex(4)}@findyourbuddy.invalid"
     user.phone_number = f"del-{secrets.token_hex(8)}"
@@ -41,11 +61,16 @@ def delete_account(db: Session, user: User) -> None:
     user.zodiac_sign = None
     user.looking_for = None
     user.about_me_prompt = None
+    user.occupation = None
+    user.gender = None
+    user.height = None
+    user.political_views = None
+    user.beliefs = None
     user.verification_status = "unverified"
     user.interests = []
     user.hobbies = []
+    user.languages_spoken = []
+    user.hidden_fields = []
     user.latitude = None
     user.longitude = None
-    user.photo_url = None
-    db.query(UserPhoto).filter(UserPhoto.user_id == user.id).delete()
     db.commit()

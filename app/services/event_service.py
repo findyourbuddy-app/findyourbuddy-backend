@@ -134,26 +134,6 @@ def check_in_to_event(
     return attendance
 
 
-def submit_ticket(
-    db: Session, event_id: int, user_id: int, image_url: str, decoded_text: str | None
-) -> EventAttendance:
-    """Records an uploaded ticket image against the user's attendance. This
-    only confirms a scannable QR/barcode was present in the photo, not that
-    the ticket is genuine or unused -- true validation would need the ticket
-    vendor's own API, which isn't available here."""
-    attendance = join_event(db, event_id, user_id)
-    attendance.ticket_image_url = image_url
-    attendance.ticket_decoded_text = decoded_text
-    attendance.ticket_verified_at = datetime.utcnow() if decoded_text else None
-    if decoded_text:
-        user = db.get(User, user_id)
-        if user is not None:
-            user.trust_score += CHECK_IN_TRUST_SCORE_BONUS
-    db.commit()
-    db.refresh(attendance)
-    return attendance
-
-
 def is_ticket_verified(db: Session, event_id: int, user_id: int) -> bool:
     attendance = (
         db.query(EventAttendance)

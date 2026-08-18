@@ -66,6 +66,15 @@ def test_delete_account_deactivates_and_scrubs_pii(db_session: Session) -> None:
             phone_number="5000000001",
         ),
     )
+    user.occupation = "Engineer"
+    user.gender = "female"
+    user.height = 170
+    user.political_views = "Centrist"
+    user.beliefs = "Agnostic"
+    user.voice_note_url = "http://localhost:8000/media/voice.mp3"
+    user.languages_spoken = ["TR", "EN"]
+    user.hidden_fields = ["age"]
+    user.photo_url = "http://localhost:8000/media/profile.jpg"
     update_profile(db_session, user, UserUpdate(bio="Loves trails", interests=["hiking"]))
 
     delete_account(db_session, user)
@@ -75,6 +84,14 @@ def test_delete_account_deactivates_and_scrubs_pii(db_session: Session) -> None:
     assert user.bio is None
     assert user.interests == []
     assert user.photo_url is None
+    assert user.voice_note_url is None
+    assert user.occupation is None
+    assert user.gender is None
+    assert user.height is None
+    assert user.political_views is None
+    assert user.beliefs is None
+    assert user.languages_spoken == []
+    assert user.hidden_fields == []
 
 
 def test_delete_account_prevents_future_login(db_session: Session) -> None:

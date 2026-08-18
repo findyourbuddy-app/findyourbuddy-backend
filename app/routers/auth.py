@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user
 from app.core.password_reset import PasswordResetSender, get_password_reset_sender
 from app.core.rate_limit import auth_rate_limit, limiter
-from app.core.security import create_access_token
+from app.core.security import create_access_token, create_refresh_token, decode_refresh_token
 from app.core.sms import LoggingSmsSender, SmsSender, get_sms_sender
 from app.database import get_db
 from app.models.user import User
@@ -14,6 +14,7 @@ from app.schemas.auth import (
     PasswordResetConfirm,
     PasswordResetRequest,
     PhoneVerificationConfirm,
+    RefreshRequest,
     Token,
 )
 from app.schemas.user import UserCreate, UserRead
@@ -56,9 +57,13 @@ def register(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered"
         ) from exc
-    user.phone_verified = True
-    db.commit()
-    db.refresh(user)
+    if isinstance(sms_sender, LoggingSmsSender):
+        user.phone_verified = True
+        db.commit()
+        db.refresh(user)
+    else:
+        code = create_phone_verification_code(db, user)
+        sms_sender.send(user, code)
     return user
 
 
@@ -106,7 +111,29 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)) -
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         ) from exc
-    return Token(access_token=create_access_token(subject=str(user.id)))
+    return Token(
+        access_token=create_access_token(subject=str(user.id)),
+        refresh_token=create_refresh_token(subject=str(user.id)),
+    )
+
+
+@router.post("/refresh", response_model=Token)
+@router.post("/refresh/", response_model=Token)
+@limiter.limit(auth_rate_limit)
+def refresh(request: Request, data: RefreshRequest, db: Session = Depends(get_db)) -> Token:
+    credentials_error = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"
+    )
+    user_id = decode_refresh_token(data.refresh_token)
+    if user_id is None:
+        raise credentials_error
+    user = db.get(User, int(user_id))
+    if user is None or not user.is_active:
+        raise credentials_error
+    return Token(
+        access_token=create_access_token(subject=str(user.id)),
+        refresh_token=create_refresh_token(subject=str(user.id)),
+    )
 
 
 @router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)

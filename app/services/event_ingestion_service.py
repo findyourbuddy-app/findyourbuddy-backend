@@ -39,7 +39,11 @@ def ingest_events(db: Session, batch: EventIngestBatch) -> EventIngestResult:
     for payload in batch.events:
         if payload.category not in allowed_categories or payload.category == "other":
             auto_cat = auto_classify_event_category_with_llm(payload.title, payload.description)
-            if auto_cat in allowed_categories:
+            # auto_classify's own fallback is "other" when it can't tell --
+            # that's not a real classification, so it must not count as
+            # "successfully reclassified" or every unrecognized category
+            # silently launders into "other" instead of being skipped.
+            if auto_cat in allowed_categories and auto_cat != "other":
                 payload.category = auto_cat
             elif payload.category not in allowed_categories:
                 skipped += 1

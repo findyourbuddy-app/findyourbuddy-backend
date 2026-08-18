@@ -20,4 +20,11 @@ def event_writes_rate_limit() -> str:
     return f"{get_settings().rate_limit_event_writes_per_minute}/minute"
 
 
+def ai_rate_limit() -> str:
+    # Each call is a real, billed OpenAI request (vision or LLM) -- much
+    # tighter than the general default so one abusive client can't run up
+    # the API bill.
+    return f"{get_settings().rate_limit_ai_per_minute}/minute"
+
+
 limiter = Limiter(key_func=get_remote_address, default_limits=[default_rate_limit])

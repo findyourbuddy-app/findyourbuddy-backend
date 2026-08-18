@@ -24,9 +24,10 @@ dependencies = [
     "redis==5.2.1",
     "iyzipay",
     "uvicorn[standard]==0.34.0",
-    "opencv-python-headless==4.10.0.84",
     "numpy==2.2.1",
     "openai>=1.0.0",
+    "boto3>=1.43.73",
+    "firebase-admin>=7.5.0",
 ]
 
 [dependency-groups]
