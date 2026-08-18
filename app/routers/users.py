@@ -449,11 +449,15 @@ async def purchase_callback(
         if checkout_status == "success" and payment_status == "SUCCESS":
             conv_id = checkout_form.get("conversationId")
             if conv_id and conv_id.startswith("purchase_"):
-                # item_type itself can contain underscores (e.g. "super_likes"),
-                # so split the fixed-shape numeric suffix off the right end
-                # instead of assuming every "_"-separated part is one field.
                 remainder = conv_id[len("purchase_"):]
                 item_type, quantity, user_id, _timestamp = remainder.rsplit("_", 3)
+                
+                expected_price = PURCHASE_ITEM_PRICES_TRY.get(item_type)
+                paid_price = str(checkout_form.get("paidPrice") or checkout_form.get("price") or "")
+                if expected_price and paid_price and float(paid_price) < float(expected_price):
+                    logger.warning(f"Price mismatch in store purchase callback: expected {expected_price}, got {paid_price}")
+                    return responses.HTMLResponse(content="<html><body><h1>Ödeme Tutarı Geçersiz</h1></body></html>", status_code=400)
+
                 if claim_payment_callback(db, token, "purchase", int(user_id)):
                     user = db.get(User, int(user_id))
                     if user is not None:

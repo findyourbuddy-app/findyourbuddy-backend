@@ -50,28 +50,40 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
+cors_origin_regex = (
+    r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.0\.\d+\.\d+)(:\d+)?"
+    if not _is_production
+    else r"https://.*\.findyourbuddy\.dev|https://findyourbuddy\.dev"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://.*|https://.*",
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(health.router)
-app.include_router(auth.router)
-app.include_router(users.router)
-app.include_router(events.router)
-app.include_router(swipes.router)
-app.include_router(matches.router)
-app.include_router(messages.router)
-app.include_router(notifications.router)
-app.include_router(safety.router)
-app.include_router(bookmarks.router)
-app.include_router(admin.router)
-app.include_router(subscriptions.router)
-app.include_router(internal.router)
-app.include_router(geocoding.router)
+routers = [
+    health.router,
+    auth.router,
+    users.router,
+    events.router,
+    swipes.router,
+    matches.router,
+    messages.router,
+    notifications.router,
+    safety.router,
+    bookmarks.router,
+    admin.router,
+    subscriptions.router,
+    internal.router,
+    geocoding.router,
+]
+
+for r in routers:
+    app.include_router(r)
+    app.include_router(r, prefix="/api")
 
 app.mount(
     settings.media_base_url,

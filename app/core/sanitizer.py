@@ -42,6 +42,21 @@ def sanitize_search_query(query: str | None) -> str:
     return sanitized
 
 
+PROMPT_INJECTION_PATTERN = re.compile(
+    r"(ignore\s+all\s+previous\s+instructions|system\s+prompt|you\s+are\s+now|override\s+instructions|assistant\s+instructions)",
+    re.IGNORECASE,
+)
+
+
+def sanitize_prompt_input(text: str | None, max_length: int = 500) -> str:
+    """Sanitizes text passed into LLM prompts to prevent prompt injection and instruction override attacks."""
+    if not text:
+        return ""
+    cleaned = sanitize_text(text, max_length=max_length)
+    cleaned = PROMPT_INJECTION_PATTERN.sub("[filtered]", cleaned)
+    return cleaned
+
+
 def validate_content_safety(text: str | None) -> tuple[bool, str | None]:
     """Validates user text against banned moderation keywords (profanity, spam, hate speech).
     Returns (is_safe, error_reason)."""
