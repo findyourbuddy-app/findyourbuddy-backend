@@ -33,3 +33,7 @@ class ChangePasswordRequest(BaseModel):
 
 class PhoneVerificationConfirm(BaseModel):
     code: str
+
+
+class FirebaseLoginRequest(BaseModel):
+    id_token: str

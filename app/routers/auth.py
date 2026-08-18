@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
+    FirebaseLoginRequest,
     LoginRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
@@ -26,6 +27,7 @@ from app.services.auth_service import (
     InvalidOrExpiredResetTokenError,
     PhoneAlreadyVerifiedError,
     PhoneNumberAlreadyRegisteredError,
+    authenticate_or_create_firebase_user,
     authenticate_user,
     change_password,
     create_phone_verification_code,
@@ -174,3 +176,27 @@ def change_my_password(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect"
         ) from exc
+
+
+@router.post("/firebase-login", response_model=Token)
+@router.post("/firebase-login/", response_model=Token)
+@limiter.limit(auth_rate_limit)
+def firebase_login(
+    request: Request,
+    data: FirebaseLoginRequest,
+    db: Session = Depends(get_db),
+) -> Token:
+    import firebase_admin.auth
+    try:
+        decoded_token = firebase_admin.auth.verify_id_token(data.id_token)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid Firebase ID Token: {exc}",
+        ) from exc
+
+    user = authenticate_or_create_firebase_user(db, decoded_token)
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+    return Token(access_token=access_token, refresh_token=refresh_token)
+

@@ -127,47 +127,37 @@ def evaluate_event_with_llm(event: Event) -> tuple[bool, str | None]:
 from app.models.user import User
 
 
-def send_event_approval_email(creator: User, event: Event) -> None:
-    """Sends an email notification via SMTP when a user's created event is approved."""
-    if not creator or not creator.email:
+def send_event_approval_email(creator: User, event: Event, db: Session | None = None) -> None:
+    """Notifies the user via push and in-app notification when their created event is approved."""
+    if not creator:
         return
 
-    from app.core.email import send_html_email
-
-    html_content = f"""
-    <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-        <h2 style="color: #6C5CE7;">Tebrikler {creator.display_name}! 🚀</h2>
-        <p>Oluşturduğunuz <b>"{event.title}"</b> başlıklı etkinlik Yapay Zeka Moderasyon kontrolünden geçerek onaylandı.</p>
-        <p>Etkinliğiniz artık <b>FindYourBuddy</b> haritasında ve keşfet ekranında yayınlanıyor!</p>
-        <br>
-        <p>Mekan: {event.location_name}<br>Tarih: {event.starts_at.strftime('%Y-%m-%d %H:%M')}</p>
-        <br>
-        <p>Harika kanka buluşmaları dileriz,<br><b>FindYourBuddy Ekibi</b></p>
-    </div>
-    """
-    send_html_email(creator.email, f"🎉 Etkinliğiniz Yayınlandı: {event.title}", html_content)
+    try:
+        if db is not None:
+            from app.core.notifications import get_notification_sender
+            from app.services.notification_service import notify_event_approved
+            notify_event_approved(db, get_notification_sender(), creator.id, event.title)
+    except Exception as exc:
+        logger.error(f"Failed to send event approval notification: {exc}")
 
 
-def send_event_rejection_email(creator: User, event: Event, reason: str | None) -> None:
-    """Sends an email notification via SMTP when a user's created event is rejected by moderation."""
-    if not creator or not creator.email:
+def send_event_rejection_email(creator: User, event: Event, reason: str | None, db: Session | None = None) -> None:
+    """Notifies the user via push and in-app notification when their created event is rejected."""
+    if not creator:
         return
 
-    from app.core.email import send_html_email
-
-    html_content = f"""
-    <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-        <h2>Merhaba {creator.display_name},</h2>
-        <p>Oluşturduğunuz <b>"{event.title}"</b> başlıklı etkinlik talebiniz Yapay Zeka Moderasyon değerlendirmesi sonucunda yayınlanamamıştır.</p>
-        <div style="background-color: #FFF3F3; padding: 12px; border-left: 4px solid #FF6B6B; margin: 16px 0;">
-            <b>Red Sebebi:</b> {reason or 'İçerik topluluk kurallarına uygun bulunamadı.'}
-        </div>
-        <p>Lütfen bilgileri düzenleyip tekrar deneyiniz.</p>
-        <br>
-        <p><b>FindYourBuddy Ekibi</b></p>
-    </div>
-    """
-    send_html_email(creator.email, f"⚠️ Etkinlik Talebiniz Hakkında: {event.title}", html_content)
+    try:
+        if db is not None:
+            from app.core.notifications import get_notification_sender
+            from app.models.notification import Notification
+            title = "Etkinlik Başvurusu Reddedildi ⚠️"
+            body = f"'{event.title}' etkinliğiniz yayınlanamadı: {reason or 'İçerik kurallara uygun bulunamadı.'}"
+            sender = get_notification_sender()
+            sender.send(creator.id, title, body)
+            db.add(Notification(user_id=creator.id, title=title, body=body))
+            db.commit()
+    except Exception as exc:
+        logger.error(f"Failed to send event rejection notification: {exc}")
 
 
 def moderate_new_event(db: Session, event: Event) -> Event:
