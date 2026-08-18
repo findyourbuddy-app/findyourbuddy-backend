@@ -3,6 +3,11 @@ import logging
 import re
 import httpx
 
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
 from app.config import get_settings
 from app.models.user import User
 
@@ -56,34 +61,57 @@ def generate_llm_kanka_synergy(user1: User, user2: User) -> dict:
         "}"
     )
 
-    url = f"{settings.novita_base_url.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {settings.novita_api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": settings.novita_model,
-        "messages": [
-            {"role": "system", "content": "Sen yalnızca JSON çıktısı veren bir AI asistanısın."},
-            {"role": "user", "content": prompt},
-        ],
-        "response_format": {"type": "json_object"},
-    }
+    base_url = settings.novita_base_url.rstrip("/")
+    messages = [
+        {"role": "system", "content": "Sen yalnızca JSON çıktısı veren bir AI asistanısın."},
+        {"role": "user", "content": prompt},
+    ]
 
-    try:
-        response = httpx.post(url, headers=headers, json=payload, timeout=8.0)
-        if response.status_code == 200:
-            res_data = response.json()
-            raw_content = res_data["choices"][0]["message"]["content"]
+    raw_content = None
+
+    # Option 1: Using official OpenAI Python SDK client
+    if OpenAI is not None:
+        try:
+            client = OpenAI(api_key=settings.novita_api_key, base_url=base_url)
+            response = client.chat.completions.create(
+                model=settings.novita_model,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
+            raw_content = response.choices[0].message.content
+        except Exception as sdk_err:
+            logger.warning(f"OpenAI SDK call to Novita AI failed, trying HTTP fallback: {sdk_err}")
+
+    # Option 2: Fallback to httpx HTTP POST call if OpenAI SDK is not present or failed
+    if raw_content is None:
+        url = f"{base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {settings.novita_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": settings.novita_model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+        }
+        try:
+            response = httpx.post(url, headers=headers, json=payload, timeout=8.0)
+            if response.status_code == 200:
+                raw_content = response.json()["choices"][0]["message"]["content"]
+            else:
+                logger.warning(f"Novita LLM Matchmaker API status {response.status_code}: {response.text}")
+        except Exception as http_err:
+            logger.error(f"Failed to generate LLM kanka synergy: {http_err}")
+
+    if raw_content:
+        try:
             cleaned = re.sub(r"```json\s*", "", raw_content)
             cleaned = re.sub(r"```\s*", "", cleaned).strip()
             parsed = json.loads(cleaned)
             parsed["shared_hobbies"] = shared_hobbies
             return parsed
-        else:
-            logger.warning(f"Novita LLM Matchmaker API status {response.status_code}: {response.text}")
-    except Exception as e:
-        logger.error(f"Failed to generate LLM kanka synergy: {e}")
+        except Exception as parse_err:
+            logger.error(f"Failed to parse LLM kanka synergy response: {parse_err}")
 
     score = min(99, max(60, 75 + len(shared_hobbies) * 6))
     return {

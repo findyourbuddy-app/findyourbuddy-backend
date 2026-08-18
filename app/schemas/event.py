@@ -1,7 +1,7 @@
 from datetime import datetime
-
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from app.schemas.user import UserPublic
+from app.core.sanitizer import sanitize_text, validate_content_safety
 
 
 class EventCreate(BaseModel):
@@ -16,6 +16,17 @@ class EventCreate(BaseModel):
     max_attendees: int | None = None
     is_paid: bool = False
     ticket_price: float | None = None
+
+    @field_validator("title", "description", "location_name", "category")
+    @classmethod
+    def _sanitize_event_strings(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = sanitize_text(v, max_length=1000)
+        is_safe, error_reason = validate_content_safety(cleaned)
+        if not is_safe:
+            raise ValueError(error_reason)
+        return cleaned
 
 
 class EventRead(BaseModel):

@@ -52,7 +52,7 @@ app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_allowed_origins.split(","),
+    allow_origin_regex=r"http://.*|https://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -82,7 +82,31 @@ app.mount(
 
 @app.on_event("startup")
 def _start_background_jobs() -> None:
+    from app.core.scheduler import run_cleanup_jobs
+    from app.database import Base, engine
+    from sqlalchemy import text, inspect
+
+    try:
+        Base.metadata.create_all(bind=engine)
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            if "users" in inspector.get_table_names():
+                cols = {c["name"] for c in inspector.get_columns("users")}
+                if "hidden_fields" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN hidden_fields JSON DEFAULT '[]'"))
+                    conn.commit()
+                if "languages_spoken" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN languages_spoken JSON DEFAULT '[]'"))
+                    conn.commit()
+    except Exception:
+        pass
+
     start_scheduler()
+    try:
+        run_cleanup_jobs()
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -227,7 +227,11 @@ def delete_expired_events(db: Session, retention_days: int) -> int:
     window, along with their swipes/bookmarks. Events that produced at least
     one Match are left untouched so existing conversations are never lost."""
     cutoff = datetime.utcnow() - timedelta(days=retention_days)
-    matched_event_ids = db.query(Match.event_id).distinct()
+    matched_event_ids = (
+        db.query(Match.event_id)
+        .filter(Match.event_id.isnot(None))
+        .distinct()
+    )
     expired_events = (
         db.query(Event)
         .filter(Event.starts_at < cutoff, Event.id.notin_(matched_event_ids))

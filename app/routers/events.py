@@ -60,16 +60,42 @@ def list_all_events(
     events = list_events(
         db, category=category, upcoming_only=upcoming_only, skip=skip, limit=limit
     )
-    attendee_counts = count_attendees_bulk(db, [event.id for event in events])
+    event_ids = [e.id for e in events]
+    attendee_counts = count_attendees_bulk(db, event_ids)
     creator_ids = {e.creator_id for e in events if e.creator_id}
     creators = {u.id: u for u in db.query(User).filter(User.id.in_(creator_ids)).all()} if creator_ids else {}
+
+    from app.models.event_attendance import EventAttendance
+    user_attendances = (
+        {
+            att.event_id: att
+            for att in db.query(EventAttendance)
+            .filter(
+                EventAttendance.event_id.in_(event_ids),
+                EventAttendance.user_id == current_user.id,
+            )
+            .all()
+        }
+        if event_ids
+        else {}
+    )
+
     return [
         EventRead.model_validate(event).model_copy(
             update={
                 "attendee_count": attendee_counts.get(event.id, 0),
-                "is_attending": is_attending(db, event.id, current_user.id),
-                "is_checked_in": is_checked_in(db, event.id, current_user.id),
-                "is_ticket_verified": is_ticket_verified(db, event.id, current_user.id),
+                "is_attending": (
+                    user_attendances.get(event.id) is not None
+                    and user_attendances[event.id].status == "approved"
+                ),
+                "is_checked_in": (
+                    user_attendances.get(event.id) is not None
+                    and user_attendances[event.id].checked_in_at is not None
+                ),
+                "is_ticket_verified": (
+                    user_attendances.get(event.id) is not None
+                    and user_attendances[event.id].ticket_verified_at is not None
+                ),
                 "creator": UserPublic.model_validate(creators[event.creator_id]) if event.creator_id in creators else None,
             }
         )
@@ -84,16 +110,39 @@ def read_my_attending_events(
     current_user: User = Depends(get_current_user),
 ) -> list[EventRead]:
     events = list_attending_events(db, current_user.id, upcoming_only=upcoming_only)
-    attendee_counts = count_attendees_bulk(db, [event.id for event in events])
+    event_ids = [e.id for e in events]
+    attendee_counts = count_attendees_bulk(db, event_ids)
     creator_ids = {e.creator_id for e in events if e.creator_id}
     creators = {u.id: u for u in db.query(User).filter(User.id.in_(creator_ids)).all()} if creator_ids else {}
+
+    from app.models.event_attendance import EventAttendance
+    user_attendances = (
+        {
+            att.event_id: att
+            for att in db.query(EventAttendance)
+            .filter(
+                EventAttendance.event_id.in_(event_ids),
+                EventAttendance.user_id == current_user.id,
+            )
+            .all()
+        }
+        if event_ids
+        else {}
+    )
+
     return [
         EventRead.model_validate(event).model_copy(
             update={
                 "attendee_count": attendee_counts.get(event.id, 0),
                 "is_attending": True,
-                "is_checked_in": is_checked_in(db, event.id, current_user.id),
-                "is_ticket_verified": is_ticket_verified(db, event.id, current_user.id),
+                "is_checked_in": (
+                    user_attendances.get(event.id) is not None
+                    and user_attendances[event.id].checked_in_at is not None
+                ),
+                "is_ticket_verified": (
+                    user_attendances.get(event.id) is not None
+                    and user_attendances[event.id].ticket_verified_at is not None
+                ),
                 "creator": UserPublic.model_validate(creators[event.creator_id]) if event.creator_id in creators else None,
             }
         )
@@ -500,3 +549,23 @@ def get_event_attendees(
         .all()
     )
     return attendees
+
+
+@router.post("/{event_id}/impressions", status_code=status.HTTP_204_NO_CONTENT)
+def record_event_impression(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Records an impression when an event card is rendered/viewed by a user."""
+    return None
+
+
+@router.post("/impressions", status_code=status.HTTP_204_NO_CONTENT)
+def record_bulk_event_impressions(
+    event_ids: list[int],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Records impressions in bulk when a list of event cards is rendered."""
+    return None

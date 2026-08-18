@@ -188,13 +188,28 @@ def list_matches_with_details(
     db: Session, user_id: int, skip: int = 0, limit: int = 50
 ) -> list[tuple[Match, User, Message | None]]:
     matches = list_matches_for_user(db, user_id, skip=skip, limit=limit)
+    if not matches:
+        return []
 
     other_ids = {_other_user_id(match, user_id) for match in matches}
     users_by_id = {
         user.id: user for user in db.query(User).filter(User.id.in_(other_ids)).all()
     }
 
+    match_ids = [m.id for m in matches]
+    last_messages_by_match_id: dict[int, Message] = {}
+    if match_ids:
+        subq = (
+            db.query(Message)
+            .filter(Message.match_id.in_(match_ids))
+            .order_by(Message.match_id, Message.created_at.desc())
+            .distinct(Message.match_id)
+            .all()
+        )
+        last_messages_by_match_id = {msg.match_id: msg for msg in subq}
+
     return [
-        (match, users_by_id[_other_user_id(match, user_id)], _last_message(db, match.id))
+        (match, users_by_id[_other_user_id(match, user_id)], last_messages_by_match_id.get(match.id))
         for match in matches
+        if _other_user_id(match, user_id) in users_by_id
     ]

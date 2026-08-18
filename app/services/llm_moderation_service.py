@@ -4,6 +4,11 @@ from datetime import datetime, timedelta
 import httpx
 from sqlalchemy.orm import Session
 
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
 from app.config import get_settings
 from app.models.event import Event
 
@@ -59,33 +64,56 @@ def evaluate_event_with_llm(event: Event) -> tuple[bool, str | None]:
         '{"approved": false, "reason": "Red sebebi..."}'
     )
 
-    url = f"{settings.novita_base_url.rstrip('/')}/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {settings.novita_api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": settings.novita_model,
-        "messages": [
-            {"role": "system", "content": "Sen bir içerik moderatörüsün. Yalnızca geçerli JSON çıktısı üretirsin."},
-            {"role": "user", "content": prompt},
-        ],
-        "response_format": {"type": "json_object"},
-    }
+    base_url = settings.novita_base_url.rstrip("/")
+    messages = [
+        {"role": "system", "content": "Sen bir içerik moderatörüsün. Yalnızca geçerli JSON çıktısı üretirsin."},
+        {"role": "user", "content": prompt},
+    ]
 
-    try:
-        response = httpx.post(url, headers=headers, json=payload, timeout=8.0)
-        if response.status_code == 200:
-            result = response.json()
-            content = result["choices"][0]["message"]["content"]
-            parsed = json.loads(content)
+    raw_content = None
+
+    # Option 1: Using official OpenAI Python SDK client
+    if OpenAI is not None:
+        try:
+            client = OpenAI(api_key=settings.novita_api_key, base_url=base_url)
+            response = client.chat.completions.create(
+                model=settings.novita_model,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
+            raw_content = response.choices[0].message.content
+        except Exception as sdk_err:
+            logger.warning(f"OpenAI SDK call to Novita AI failed, trying HTTP fallback: {sdk_err}")
+
+    # Option 2: Fallback to httpx HTTP POST call if OpenAI SDK is not present or failed
+    if raw_content is None:
+        url = f"{base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {settings.novita_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": settings.novita_model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+        }
+        try:
+            response = httpx.post(url, headers=headers, json=payload, timeout=8.0)
+            if response.status_code == 200:
+                raw_content = response.json()["choices"][0]["message"]["content"]
+            else:
+                logger.warning(f"Novita Moderation API error {response.status_code}: {response.text}")
+        except Exception as http_err:
+            logger.error(f"Failed to moderate event with LLM: {http_err}")
+
+    if raw_content:
+        try:
+            parsed = json.loads(raw_content)
             approved = bool(parsed.get("approved", True))
             reason = parsed.get("reason")
             return approved, reason
-        else:
-            logger.warning(f"Novita Moderation API error {response.status_code}: {response.text}")
-    except Exception as e:
-        logger.error(f"Failed to moderate event with LLM: {e}")
+        except Exception as parse_err:
+            logger.error(f"Failed to parse LLM moderation response: {parse_err}")
 
     return True, None
 
@@ -202,3 +230,64 @@ def moderate_new_event(db: Session, event: Event) -> Event:
         else:
             send_event_rejection_email(creator, event, rejection_reason)
     return event
+
+
+def auto_classify_event_category_with_llm(title: str, description: str | None = None) -> str:
+    """Uses keywords & Novita AI LLM to automatically categorize an event into the best matching category (e.g. 'festival')."""
+    text = (title + " " + (description or "")).lower()
+    
+    # 1. Instant zero-latency rule-based keyword match
+    if any(k in text for k in ["fest", "festival", "festivali", "carnival", "karnaval"]):
+        return "festival"
+    if any(k in text for k in ["konser", "concert", "live band", "canlı müzik", "akustik"]):
+        return "concert"
+    if any(k in text for k in ["tiyatro", "theatre", "gösteri", "standup", "stand-up", "komedi"]):
+        return "theatre"
+    if any(k in text for k in ["parti", "party", "dj set", "after party", "nightclub"]):
+        return "party"
+    if any(k in text for k in ["sergi", "galeri", "art", "sanat", "müze"]):
+        return "art"
+    if any(k in text for k in ["workshop", "atölye", "seminer", "kurs"]):
+        return "workshop"
+
+    settings = get_settings()
+    if not settings.novita_api_key:
+        return "other"
+
+    categories_list = settings.allowed_event_categories
+    prompt = (
+        "Sen bir etkinlik kategorize etme yapay zekasısın.\n"
+        f"Aşağıdaki etkinliği şu kategorilerden EN UYGUN birine sınıflandır: {', '.join(categories_list)}.\n\n"
+        f"Etkinlik Başlığı: {title}\n"
+        f"Açıklama: {description or 'Yok'}\n\n"
+        "SADECE geçerli bir JSON objesi dön:\n"
+        '{"category": "festival"}'
+    )
+
+    base_url = settings.novita_base_url.rstrip("/")
+    messages = [
+        {"role": "system", "content": "Sen yalnızca JSON çıktısı veren bir AI asistanısın."},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        url = f"{base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {settings.novita_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": settings.novita_model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+        }
+        res = httpx.post(url, headers=headers, json=payload, timeout=5.0)
+        if res.status_code == 200:
+            parsed = json.loads(res.json()["choices"][0]["message"]["content"])
+            cat = str(parsed.get("category", "")).strip().lower()
+            if cat in categories_list:
+                return cat
+    except Exception as e:
+        logger.warning(f"LLM category classification error: {e}")
+
+    return "other"

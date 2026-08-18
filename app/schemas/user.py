@@ -17,6 +17,9 @@ class UserPublic(BaseModel):
     is_verified: bool = False
 
 
+from app.core.sanitizer import sanitize_text, validate_content_safety
+
+
 class UserCreate(BaseModel):
     email: SafeEmail
     password: str
@@ -32,6 +35,15 @@ class UserCreate(BaseModel):
             raise ValueError("Terms of service and privacy policy must be accepted")
         return value
 
+    @field_validator("display_name")
+    @classmethod
+    def _sanitize_name(cls, v: str) -> str:
+        cleaned = sanitize_text(v, max_length=50)
+        is_safe, error_reason = validate_content_safety(cleaned)
+        if not is_safe:
+            raise ValueError(error_reason)
+        return cleaned
+
 
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -46,6 +58,9 @@ class UserRead(BaseModel):
     university: str | None = None
     zodiac_sign: str | None = None
     gender: str | None = None
+    height: int | None = None
+    political_views: str | None = None
+    beliefs: str | None = None
     verification_status: str = "unverified"
     looking_for: str | None = None
     about_me_prompt: str | None = None
@@ -53,6 +68,8 @@ class UserRead(BaseModel):
     bio: str | None = None
     interests: list[str] = []
     hobbies: list[str] = []
+    languages_spoken: list[str] = []
+    hidden_fields: list[str] = []
     latitude: float | None = None
     longitude: float | None = None
     photo_url: str | None = None
@@ -78,12 +95,17 @@ class UserUpdate(BaseModel):
     university: str | None = None
     zodiac_sign: str | None = None
     gender: str | None = None
+    height: int | None = None
+    political_views: str | None = None
+    beliefs: str | None = None
     looking_for: str | None = None
     about_me_prompt: str | None = None
     voice_note_url: str | None = None
     bio: str | None = None
     interests: list[str] | None = None
     hobbies: list[str] | None = None
+    languages_spoken: list[str] | None = None
+    hidden_fields: list[str] | None = None
     latitude: float | None = None
     longitude: float | None = None
 
@@ -93,6 +115,17 @@ class UserUpdate(BaseModel):
         if value is not None and len(value) > 4:
             raise ValueError("En fazla 4 hobi seçebilirsiniz.")
         return value
+
+    @field_validator("display_name", "occupation", "university", "about_me_prompt", "bio")
+    @classmethod
+    def _sanitize_user_strings(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = sanitize_text(v, max_length=500)
+        is_safe, error_reason = validate_content_safety(cleaned)
+        if not is_safe:
+            raise ValueError(error_reason)
+        return cleaned
 
 
 class AIRecommendation(BaseModel):

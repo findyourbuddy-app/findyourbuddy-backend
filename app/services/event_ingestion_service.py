@@ -26,6 +26,9 @@ def _apply_ingest_payload(event: Event, payload: EventIngestPayload) -> None:
     event.is_paid = payload.is_paid
 
 
+from app.services.llm_moderation_service import auto_classify_event_category_with_llm
+
+
 def ingest_events(db: Session, batch: EventIngestBatch) -> EventIngestResult:
     allowed_categories = set(get_settings().allowed_event_categories)
     created = 0
@@ -34,12 +37,16 @@ def ingest_events(db: Session, batch: EventIngestBatch) -> EventIngestResult:
     errors: list[str] = []
 
     for payload in batch.events:
-        if payload.category not in allowed_categories:
-            skipped += 1
-            errors.append(
-                f"{payload.source}:{payload.external_id} - invalid category '{payload.category}'"
-            )
-            continue
+        if payload.category not in allowed_categories or payload.category == "other":
+            auto_cat = auto_classify_event_category_with_llm(payload.title, payload.description)
+            if auto_cat in allowed_categories:
+                payload.category = auto_cat
+            elif payload.category not in allowed_categories:
+                skipped += 1
+                errors.append(
+                    f"{payload.source}:{payload.external_id} - invalid category '{payload.category}'"
+                )
+                continue
 
         existing = _find_existing_event(db, payload.source, payload.external_id)
         if existing is None:
