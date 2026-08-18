@@ -75,4 +75,4 @@ def test_new_message_notifies_the_other_participant(
 
     client.post(f"/matches/{match_id}/messages/", headers=a_headers, json={"content": "hey"})
 
-    assert notification_sender.sent == [(b_id, "New message", "You have a new message.")]
+    assert notification_sender.sent == [(b_id, "Yeni Mesaj 💬", "Sana yeni bir mesaj geldi.")]

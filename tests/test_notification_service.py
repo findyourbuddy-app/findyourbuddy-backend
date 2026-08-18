@@ -27,8 +27,8 @@ def test_notify_match_created_persists_notification_history(db_session: Session)
 
     notify_match_created(db_session, sender, match)
 
-    assert [n.title for n in list_notifications(db_session, 10)] == ["New match!"]
-    assert [n.title for n in list_notifications(db_session, 20)] == ["New match!"]
+    assert [n.title for n in list_notifications(db_session, 10)] == ["Yeni Eşleşme! 🎉"]
+    assert [n.title for n in list_notifications(db_session, 20)] == ["Yeni Eşleşme! 🎉"]
 
 
 def test_notify_new_message_notifies_only_the_recipient(db_session: Session) -> None:
@@ -37,8 +37,8 @@ def test_notify_new_message_notifies_only_the_recipient(db_session: Session) -> 
 
     notify_new_message(db_session, sender, message, recipient_id=20)
 
-    assert sender.sent == [(20, "New message", "You have a new message.")]
-    assert [n.title for n in list_notifications(db_session, 20)] == ["New message"]
+    assert sender.sent == [(20, "Yeni Mesaj 💬", "Sana yeni bir mesaj geldi.")]
+    assert [n.title for n in list_notifications(db_session, 20)] == ["Yeni Mesaj 💬"]
 
 
 def test_list_notifications_respects_skip_and_limit(db_session: Session) -> None:

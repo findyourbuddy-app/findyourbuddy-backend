@@ -150,21 +150,13 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
             profile_photos.append(item.photo_url)
 
     if not profile_photos:
-        # If no previous profile photo exists, set selfie as profile photo and auto-verify
-        if selfie_photo_url:
-            user.photo_url = selfie_photo_url
-            user.is_verified = True
-            user.verification_status = "verified"
-            db.commit()
-            db.refresh(user)
-            send_verification_success_email(user)
-            return {
-                "verified": True,
-                "message": "Profil fotoğrafınız kaydedildi ve Mavi Tik 🔵 hesabınıza tanımlandı!",
-            }
+        # No existing profile photo to compare the selfie against -- there is
+        # nothing to verify. This must never auto-approve regardless of what
+        # selfie_photo_url is: doing so would let anyone skip the actual
+        # face-match check entirely by simply never uploading a profile photo.
         return {
             "verified": False,
-            "message": "Profilinizde karşılaştırılacak profil fotoğrafı bulunamadı.",
+            "message": "Profilinizde karşılaştırılacak profil fotoğrafı bulunamadı. Önce bir profil fotoğrafı yükleyin.",
         }
 
     if not settings.novita_api_key:

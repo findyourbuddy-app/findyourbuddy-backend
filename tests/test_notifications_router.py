@@ -49,7 +49,7 @@ def test_list_my_notifications_returns_notifications_after_match(client: TestCli
 
     assert response.status_code == 200
     assert len(response.json()) == 1
-    assert response.json()[0]["title"] == "New match!"
+    assert response.json()[0]["title"] == "Yeni Eşleşme! 🎉"
     assert response.json()[0]["is_read"] is False
 
 
