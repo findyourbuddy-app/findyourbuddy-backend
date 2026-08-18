@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
 from app.models.password_reset_token import PasswordResetToken
-from app.models.phone_verification_code import PhoneVerificationCode
 from app.models.user import User
 from app.schemas.user import UserCreate
 
@@ -34,14 +33,6 @@ class InvalidOrExpiredResetTokenError(Exception):
 
 
 class IncorrectCurrentPasswordError(Exception):
-    pass
-
-
-class InvalidOrExpiredPhoneCodeError(Exception):
-    pass
-
-
-class PhoneAlreadyVerifiedError(Exception):
     pass
 
 
@@ -89,37 +80,6 @@ def register_user(db: Session, data: UserCreate) -> User:
     db.refresh(user)
     logger.info("user registered user_id=%s referred_by=%s", user.id, user.referred_by_id)
     return user
-
-
-def create_phone_verification_code(db: Session, user: User) -> str:
-    code = PhoneVerificationCode(user_id=user.id)
-    db.add(code)
-    db.commit()
-    db.refresh(code)
-    return code.code
-
-
-def verify_phone_code(db: Session, user: User, code: str) -> None:
-    if user.phone_verified:
-        raise PhoneAlreadyVerifiedError(user.id)
-
-    record = (
-        db.query(PhoneVerificationCode)
-        .filter(
-            PhoneVerificationCode.user_id == user.id,
-            PhoneVerificationCode.code == code,
-            PhoneVerificationCode.consumed_at.is_(None),
-            PhoneVerificationCode.expires_at >= datetime.utcnow(),
-        )
-        .order_by(PhoneVerificationCode.created_at.desc())
-        .first()
-    )
-    if record is None:
-        raise InvalidOrExpiredPhoneCodeError(user.id)
-
-    record.consumed_at = datetime.utcnow()
-    user.phone_verified = True
-    db.commit()
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User:
