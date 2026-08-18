@@ -22,7 +22,6 @@ from app.services.event_service import (
     is_checked_in,
     is_ticket_verified,
     list_events,
-    submit_ticket,
 )
 from app.services.matching_service import try_create_match
 from app.services.swipe_service import record_swipe
@@ -266,21 +265,9 @@ def test_check_in_rejects_outside_time_window(db_session: Session) -> None:
         check_in_to_event(db_session, event.id, attendee_id, latitude=41.0, longitude=29.0)
 
 
-def test_submit_ticket_with_decoded_code_marks_verified(db_session: Session) -> None:
+def test_is_ticket_verified_false_when_never_submitted(db_session: Session) -> None:
     creator_id = _create_user(db_session, "creator@example.com")
     attendee_id = _create_user(db_session, "attendee@example.com")
     event = create_event(db_session, _event_data(title="Paid gig"), creator_id)
-
-    submit_ticket(db_session, event.id, attendee_id, "http://media/ticket.jpg", "TICKET-123")
-
-    assert is_ticket_verified(db_session, event.id, attendee_id) is True
-
-
-def test_submit_ticket_without_decoded_code_stays_unverified(db_session: Session) -> None:
-    creator_id = _create_user(db_session, "creator@example.com")
-    attendee_id = _create_user(db_session, "attendee@example.com")
-    event = create_event(db_session, _event_data(title="Paid gig"), creator_id)
-
-    submit_ticket(db_session, event.id, attendee_id, "http://media/ticket.jpg", None)
 
     assert is_ticket_verified(db_session, event.id, attendee_id) is False

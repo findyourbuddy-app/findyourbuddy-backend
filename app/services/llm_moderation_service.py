@@ -129,81 +129,45 @@ from app.models.user import User
 
 def send_event_approval_email(creator: User, event: Event) -> None:
     """Sends an email notification via SMTP when a user's created event is approved."""
-    settings = get_settings()
-    if not settings.smtp_username or not creator or not creator.email:
-        logger.info(f"SMTP not configured. Event approval email logged for user {creator.email if creator else 'unknown'}")
+    if not creator or not creator.email:
         return
 
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
+    from app.core.email import send_html_email
 
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"🎉 Etkinliğiniz Yayınlandı: {event.title}"
-        msg["From"] = settings.smtp_sender
-        msg["To"] = creator.email
-
-        html_content = f"""
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-            <h2 style="color: #6C5CE7;">Tebrikler {creator.display_name}! 🚀</h2>
-            <p>Oluşturduğunuz <b>"{event.title}"</b> başlıklı etkinlik Yapay Zeka Moderasyon kontrolünden geçerek onaylandı.</p>
-            <p>Etkinliğiniz artık <b>FindYourBuddy</b> haritasında ve keşfet ekranında yayınlanıyor!</p>
-            <br>
-            <p>Mekan: {event.location_name}<br>Tarih: {event.starts_at.strftime('%Y-%m-%d %H:%M')}</p>
-            <br>
-            <p>Harika kanka buluşmaları dileriz,<br><b>FindYourBuddy Ekibi</b></p>
-        </div>
-        """
-        msg.attach(MIMEText(html_content, "html"))
-
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-            server.starttls()
-            server.login(settings.smtp_username, settings.smtp_password or "")
-            server.send_message(msg)
-        logger.info(f"Event approval email sent to {creator.email}")
-    except Exception as e:
-        logger.error(f"Failed to send event approval email: {e}")
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+        <h2 style="color: #6C5CE7;">Tebrikler {creator.display_name}! 🚀</h2>
+        <p>Oluşturduğunuz <b>"{event.title}"</b> başlıklı etkinlik Yapay Zeka Moderasyon kontrolünden geçerek onaylandı.</p>
+        <p>Etkinliğiniz artık <b>FindYourBuddy</b> haritasında ve keşfet ekranında yayınlanıyor!</p>
+        <br>
+        <p>Mekan: {event.location_name}<br>Tarih: {event.starts_at.strftime('%Y-%m-%d %H:%M')}</p>
+        <br>
+        <p>Harika kanka buluşmaları dileriz,<br><b>FindYourBuddy Ekibi</b></p>
+    </div>
+    """
+    send_html_email(creator.email, f"🎉 Etkinliğiniz Yayınlandı: {event.title}", html_content)
 
 
 def send_event_rejection_email(creator: User, event: Event, reason: str | None) -> None:
     """Sends an email notification via SMTP when a user's created event is rejected by moderation."""
-    settings = get_settings()
-    if not settings.smtp_username or not creator or not creator.email:
-        logger.info(f"SMTP not configured. Event rejection email logged for user {creator.email if creator else 'unknown'}")
+    if not creator or not creator.email:
         return
 
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
+    from app.core.email import send_html_email
 
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"⚠️ Etkinlik Talebiniz Hakkında: {event.title}"
-        msg["From"] = settings.smtp_sender
-        msg["To"] = creator.email
-
-        html_content = f"""
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-            <h2>Merhaba {creator.display_name},</h2>
-            <p>Oluşturduğunuz <b>"{event.title}"</b> başlıklı etkinlik talebiniz Yapay Zeka Moderasyon değerlendirmesi sonucunda yayınlanamamıştır.</p>
-            <div style="background-color: #FFF3F3; padding: 12px; border-left: 4px solid #FF6B6B; margin: 16px 0;">
-                <b>Red Sebebi:</b> {reason or 'İçerik topluluk kurallarına uygun bulunamadı.'}
-            </div>
-            <p>Lütfen bilgileri düzenleyip tekrar deneyiniz.</p>
-            <br>
-            <p><b>FindYourBuddy Ekibi</b></p>
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+        <h2>Merhaba {creator.display_name},</h2>
+        <p>Oluşturduğunuz <b>"{event.title}"</b> başlıklı etkinlik talebiniz Yapay Zeka Moderasyon değerlendirmesi sonucunda yayınlanamamıştır.</p>
+        <div style="background-color: #FFF3F3; padding: 12px; border-left: 4px solid #FF6B6B; margin: 16px 0;">
+            <b>Red Sebebi:</b> {reason or 'İçerik topluluk kurallarına uygun bulunamadı.'}
         </div>
-        """
-        msg.attach(MIMEText(html_content, "html"))
-
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-            server.starttls()
-            server.login(settings.smtp_username, settings.smtp_password or "")
-            server.send_message(msg)
-        logger.info(f"Event rejection email sent to {creator.email}")
-    except Exception as e:
-        logger.error(f"Failed to send event rejection email: {e}")
+        <p>Lütfen bilgileri düzenleyip tekrar deneyiniz.</p>
+        <br>
+        <p><b>FindYourBuddy Ekibi</b></p>
+    </div>
+    """
+    send_html_email(creator.email, f"⚠️ Etkinlik Talebiniz Hakkında: {event.title}", html_content)
 
 
 def moderate_new_event(db: Session, event: Event) -> Event:

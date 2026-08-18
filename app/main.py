@@ -50,6 +50,11 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
+cors_allowed_origins = [
+    origin.strip()
+    for origin in settings.cors_allowed_origins.split(",")
+    if origin.strip() and origin.strip() != "*"
+]
 cors_origin_regex = (
     r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.0\.\d+\.\d+)(:\d+)?"
     if not _is_production
@@ -58,11 +63,34 @@ cors_origin_regex = (
 
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=cors_allowed_origins,
     allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from fastapi import Request, responses
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    if _is_production:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    import logging
+    logging.getLogger("app").error(f"Unhandled server error: {exc}", exc_info=True)
+    return responses.JSONResponse(
+        status_code=500,
+        content={"detail": "Sunucu tarafında bir hata oluştu. Lütfen tekrar deneyin."}
+    )
 
 routers = [
     health.router,

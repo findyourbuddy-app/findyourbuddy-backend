@@ -1,10 +1,9 @@
-import io
 import json
 import logging
 from datetime import datetime
 
 import iyzipay
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, responses, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, responses, status
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -32,13 +31,11 @@ from app.services.event_service import (
     join_event,
     list_attending_events,
     list_events,
-    submit_ticket,
 )
 from app.services.media_service import MediaStorage, get_media_storage
 from app.services.media_validation import ImageTooLargeError, InvalidImageError, validate_image
 from app.services.payment_service import claim_payment_callback
 from app.services.subscription_service import is_premium
-from app.services.ticket_service import decode_qr_or_barcode
 
 logger = logging.getLogger(__name__)
 
@@ -394,49 +391,6 @@ def attend_event(
             "is_attending": attendance.status == "approved",
             "is_checked_in": attendance.checked_in_at is not None,
             "is_ticket_verified": attendance.ticket_verified_at is not None,
-        }
-    )
-
-
-@router.post("/{event_id}/ticket", response_model=EventRead)
-def upload_ticket(
-    event_id: int,
-    file: UploadFile,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    storage: MediaStorage = Depends(get_media_storage),
-) -> EventRead:
-    event = get_event(db, event_id)
-    if event is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-
-    try:
-        data = validate_image(file.file)
-    except InvalidImageError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid image file"
-        ) from exc
-    except ImageTooLargeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large"
-        ) from exc
-
-    decoded_text = decode_qr_or_barcode(data)
-    image_url = storage.upload(io.BytesIO(data), file.filename or "ticket.jpg")
-    attendance = submit_ticket(db, event_id, current_user.id, image_url, decoded_text)
-
-    if decoded_text is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No QR/barcode could be read from this photo. Try a clearer photo of the ticket.",
-        )
-
-    return EventRead.model_validate(event).model_copy(
-        update={
-            "attendee_count": count_attendees(db, event_id),
-            "is_attending": True,
-            "is_checked_in": attendance.checked_in_at is not None,
-            "is_ticket_verified": True,
         }
     )
 

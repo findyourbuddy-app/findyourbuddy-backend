@@ -1,7 +1,10 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
+from app.core.firebase import get_firestore_client
 from app.core.notifications import NotificationSender, get_notification_sender
 from app.core.rate_limit import limiter, messages_rate_limit
 from app.database import get_db
@@ -21,6 +24,7 @@ from app.services.message_service import (
 from app.services.notification_service import notify_new_message
 
 router = APIRouter(prefix="/matches/{match_id}/messages", tags=["messages"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=list[MessageRead])
@@ -85,8 +89,30 @@ def post_message(
     match = db.get(Match, match_id)
     recipient_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
     notify_new_message(db, notification_sender, message, recipient_id)
+    _relay_to_firestore(match_id, message)
 
     return message
+
+
+def _relay_to_firestore(match_id: int, message: Message) -> None:
+    """Writes the already-moderated, already-rate-limited message into
+    Firestore for real-time delivery. Best-effort: a Firestore outage
+    shouldn't fail the send, since the message is already durably saved
+    in Postgres and push-notified."""
+    db_client = get_firestore_client()
+    if db_client is None:
+        return
+    try:
+        db_client.collection("matches").document(str(match_id)).collection("messages").add({
+            "sender_id": message.sender_id,
+            "content": message.content,
+            "message_type": message.message_type,
+            "media_url": message.media_url,
+            "created_at": message.created_at,
+            "is_read": False,
+        })
+    except Exception:
+        logger.warning("Failed to relay message %s to Firestore", message.id, exc_info=True)
 
 
 @router.patch("/read", response_model=MessagesMarkedRead)
