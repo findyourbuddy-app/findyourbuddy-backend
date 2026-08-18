@@ -176,7 +176,7 @@ def moderate_new_event(db: Session, event: Event) -> Event:
         db.commit()
         db.refresh(event)
         if creator:
-            send_event_rejection_email(creator, event, collision_reason)
+            send_event_rejection_email(creator, event, collision_reason, db=db)
         return event
 
     approved, rejection_reason = evaluate_event_with_llm(event)
@@ -186,9 +186,9 @@ def moderate_new_event(db: Session, event: Event) -> Event:
     db.refresh(event)
     if creator:
         if approved:
-            send_event_approval_email(creator, event)
+            send_event_approval_email(creator, event, db=db)
         else:
-            send_event_rejection_email(creator, event, rejection_reason)
+            send_event_rejection_email(creator, event, rejection_reason, db=db)
     return event
 
 
