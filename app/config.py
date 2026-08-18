@@ -101,15 +101,6 @@ class Settings(BaseSettings):
     push_provider: str = "logging"
     expo_push_api_url: str = "https://exp.host/--/api/v2/push/send"
 
-    # SMS gönderim altyapısı: hesap/API bilgisi olmadan "logging" kalır (kod
-    # sadece sunucu loglarında görünür, kullanıcı kayıt sırasında otomatik
-    # doğrulanmış sayılır). Netgsm hesabı açılınca bu üç alanı .env'e
-    # eklemek + sms_provider="netgsm" yapmak yeterli, kod değişikliği gerekmez.
-    sms_provider: str = "logging"
-    netgsm_username: str = ""
-    netgsm_password: str = ""
-    netgsm_header: str = ""
-
     cors_allowed_origins: str = "http://localhost:8000,http://127.0.0.1:8000,https://findyourbuddy.dev"
     log_level: str = "INFO"
 
