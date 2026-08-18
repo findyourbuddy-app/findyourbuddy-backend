@@ -48,6 +48,7 @@ EVENT_CREDITS_PRICE_TRY = "49.00"
 router = APIRouter(prefix="/events", tags=["events"])
 
 
+@router.get("", response_model=list[EventRead])
 @router.get("/", response_model=list[EventRead])
 def list_all_events(
     category: str | None = None,
@@ -261,12 +262,14 @@ async def event_credits_callback(
         payment_status = checkout_form.get("paymentStatus")
 
         if checkout_status == "success" and payment_status == "SUCCESS":
+            paid_price = str(checkout_form.get("paidPrice") or checkout_form.get("price") or "")
+            if paid_price and float(paid_price) < float(EVENT_CREDITS_PRICE_TRY):
+                logger.warning(f"Price mismatch in credits callback: expected {EVENT_CREDITS_PRICE_TRY}, got {paid_price}")
+                return responses.HTMLResponse(content="<html><body><h1>Ödeme Tutarı Geçersiz</h1></body></html>", status_code=400)
+
             conv_id = checkout_form.get("conversationId")
             if conv_id and conv_id.startswith("credits_"):
                 user_id = int(conv_id.split("_")[1])
-                # Same idempotency concern as subscriptions.iyzico_callback --
-                # a retried callback for the same token must not grant a
-                # second batch of credits.
                 if claim_payment_callback(db, token, "event_credits", user_id):
                     grant_event_credits(db, user_id, EVENT_CREDITS_PER_PURCHASE)
                 return responses.HTMLResponse(content=f"""
@@ -338,6 +341,7 @@ def read_event(
     )
 
 
+@router.post("", response_model=EventRead, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=EventRead, status_code=status.HTTP_201_CREATED)
 @limiter.limit(event_writes_rate_limit)
 def create_new_event(

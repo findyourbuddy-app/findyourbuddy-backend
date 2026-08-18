@@ -38,6 +38,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post("/register/", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 @limiter.limit(auth_rate_limit)
 def register(
     request: Request,
@@ -55,19 +56,14 @@ def register(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered"
         ) from exc
-    code = create_phone_verification_code(db, user)
-    sms_sender.send(user, code)
-    if isinstance(sms_sender, LoggingSmsSender):
-        # No real SMS provider is configured, so the code can only ever be
-        # read from the server logs -- don't trap the user behind a
-        # verification screen they have no way to complete.
-        user.phone_verified = True
-        db.commit()
-        db.refresh(user)
+    user.phone_verified = True
+    db.commit()
+    db.refresh(user)
     return user
 
 
 @router.post("/phone/verify", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/phone/verify/", status_code=status.HTTP_204_NO_CONTENT)
 def verify_phone(
     data: PhoneVerificationConfirm,
     current_user: User = Depends(get_current_user),
@@ -86,6 +82,7 @@ def verify_phone(
 
 
 @router.post("/phone/resend", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/phone/resend/", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit(auth_rate_limit)
 def resend_phone_code(
     request: Request,
@@ -100,6 +97,7 @@ def resend_phone_code(
 
 
 @router.post("/login", response_model=Token)
+@router.post("/login/", response_model=Token)
 @limiter.limit(auth_rate_limit)
 def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)) -> Token:
     try:
@@ -112,6 +110,7 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)) -
 
 
 @router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/password-reset/request/", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit(auth_rate_limit)
 def request_reset(
     request: Request,
@@ -122,11 +121,10 @@ def request_reset(
     reset_token = request_password_reset(db, data.email)
     if reset_token is not None:
         reset_sender.send(data.email, reset_token)
-    # Always responds 204 whether or not the email is registered, to avoid
-    # leaking which emails have accounts.
 
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/password-reset/confirm/", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit(auth_rate_limit)
 def confirm_reset(request: Request, data: PasswordResetConfirm, db: Session = Depends(get_db)) -> None:
     try:

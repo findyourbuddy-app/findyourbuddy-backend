@@ -9,6 +9,7 @@ from app.database import get_db
 router = APIRouter(prefix="/health", tags=["health"])
 
 
+@router.get("")
 @router.get("/")
 def check_service_status() -> dict[str, str]:
     return {"status": "ok"}

@@ -48,16 +48,22 @@ def evaluate_event_with_llm(event: Event) -> tuple[bool, str | None]:
         # If Novita key is not set, default auto-approve clean text
         return True, None
 
+    from app.core.sanitizer import sanitize_prompt_input
+
+    safe_title = sanitize_prompt_input(event.title, max_length=150)
+    safe_description = sanitize_prompt_input(event.description, max_length=500)
+    safe_location = sanitize_prompt_input(event.location_name, max_length=100)
+
     prompt = (
         "Etkinlik Moderasyonu: Aşağıdaki sosyal etkinlik teklifini değerlendir.\n"
         "Kurallar:\n"
         "1. Küfür, nefret söylemi, yasadışı veya cinsel içerik barındıran metinleri REDDET.\n"
         "2. Anlamsız harf yığınları, troll amaçlı veya sahte etkinlikleri REDDET.\n"
         "3. Düzgün, topluluğa uygun sosyal buluşma tekliflerini ONAYLA.\n\n"
-        f"Başlık: {event.title}\n"
-        f"Açıklama: {event.description or 'Açıklama yok'}\n"
+        f"Başlık: {safe_title}\n"
+        f"Açıklama: {safe_description or 'Açıklama yok'}\n"
         f"Kategori: {event.category}\n"
-        f"Mekan: {event.location_name}\n\n"
+        f"Mekan: {safe_location}\n\n"
         "SADECE ham JSON dön:\n"
         '{"approved": true, "reason": null}\n'
         "veya\n"
