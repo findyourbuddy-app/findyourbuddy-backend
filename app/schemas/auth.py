@@ -31,5 +31,5 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
-class PhoneVerificationConfirm(BaseModel):
-    code: str
+class FirebaseLoginRequest(BaseModel):
+    id_token: str

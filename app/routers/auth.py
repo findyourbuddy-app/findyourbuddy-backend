@@ -5,15 +5,14 @@ from app.core.deps import get_current_user
 from app.core.password_reset import PasswordResetSender, get_password_reset_sender
 from app.core.rate_limit import auth_rate_limit, limiter
 from app.core.security import create_access_token, create_refresh_token, decode_refresh_token
-from app.core.sms import LoggingSmsSender, SmsSender, get_sms_sender
 from app.database import get_db
 from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
+    FirebaseLoginRequest,
     LoginRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
-    PhoneVerificationConfirm,
     RefreshRequest,
     Token,
 )
@@ -22,17 +21,14 @@ from app.services.auth_service import (
     EmailAlreadyRegisteredError,
     IncorrectCurrentPasswordError,
     InvalidCredentialsError,
-    InvalidOrExpiredPhoneCodeError,
     InvalidOrExpiredResetTokenError,
-    PhoneAlreadyVerifiedError,
     PhoneNumberAlreadyRegisteredError,
+    authenticate_or_create_firebase_user,
     authenticate_user,
     change_password,
-    create_phone_verification_code,
     register_user,
     request_password_reset,
     reset_password,
-    verify_phone_code,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -45,7 +41,6 @@ def register(
     request: Request,
     data: UserCreate,
     db: Session = Depends(get_db),
-    sms_sender: SmsSender = Depends(get_sms_sender),
 ) -> UserRead:
     try:
         user = register_user(db, data)
@@ -57,48 +52,7 @@ def register(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Phone number already registered"
         ) from exc
-    if isinstance(sms_sender, LoggingSmsSender):
-        user.phone_verified = True
-        db.commit()
-        db.refresh(user)
-    else:
-        code = create_phone_verification_code(db, user)
-        sms_sender.send(user, code)
     return user
-
-
-@router.post("/phone/verify", status_code=status.HTTP_204_NO_CONTENT)
-@router.post("/phone/verify/", status_code=status.HTTP_204_NO_CONTENT)
-def verify_phone(
-    data: PhoneVerificationConfirm,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> None:
-    try:
-        verify_phone_code(db, current_user, data.code)
-    except InvalidOrExpiredPhoneCodeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code"
-        ) from exc
-    except PhoneAlreadyVerifiedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Phone already verified"
-        ) from exc
-
-
-@router.post("/phone/resend", status_code=status.HTTP_204_NO_CONTENT)
-@router.post("/phone/resend/", status_code=status.HTTP_204_NO_CONTENT)
-@limiter.limit(auth_rate_limit)
-def resend_phone_code(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    sms_sender: SmsSender = Depends(get_sms_sender),
-) -> None:
-    if current_user.phone_verified:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone already verified")
-    code = create_phone_verification_code(db, current_user)
-    sms_sender.send(current_user, code)
 
 
 @router.post("/login", response_model=Token)
@@ -174,3 +128,27 @@ def change_my_password(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect"
         ) from exc
+
+
+@router.post("/firebase-login", response_model=Token)
+@router.post("/firebase-login/", response_model=Token)
+@limiter.limit(auth_rate_limit)
+def firebase_login(
+    request: Request,
+    data: FirebaseLoginRequest,
+    db: Session = Depends(get_db),
+) -> Token:
+    import firebase_admin.auth
+    try:
+        decoded_token = firebase_admin.auth.verify_id_token(data.id_token)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid Firebase ID Token: {exc}",
+        ) from exc
+
+    user = authenticate_or_create_firebase_user(db, decoded_token)
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+    return Token(access_token=access_token, refresh_token=refresh_token)
+

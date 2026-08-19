@@ -138,6 +138,9 @@ def _start_background_jobs() -> None:
                 if "languages_spoken" not in cols:
                     conn.execute(text("ALTER TABLE users ADD COLUMN languages_spoken JSON DEFAULT '[]'"))
                     conn.commit()
+                if "firebase_uid" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN firebase_uid VARCHAR(128)"))
+                    conn.commit()
     except Exception:
         pass
 

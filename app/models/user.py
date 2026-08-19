@@ -55,6 +55,7 @@ class User(Base):
     phone_number: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    firebase_uid: Mapped[str | None] = mapped_column(String(128), unique=True, index=True, default=None)
 
     photos: Mapped[list["UserPhoto"]] = relationship(
         "UserPhoto", order_by="UserPhoto.position", lazy="selectin"

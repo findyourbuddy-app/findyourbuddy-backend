@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
 from app.models.password_reset_token import PasswordResetToken
-from app.models.phone_verification_code import PhoneVerificationCode
 from app.models.user import User
 from app.schemas.user import UserCreate
 
@@ -34,14 +33,6 @@ class InvalidOrExpiredResetTokenError(Exception):
 
 
 class IncorrectCurrentPasswordError(Exception):
-    pass
-
-
-class InvalidOrExpiredPhoneCodeError(Exception):
-    pass
-
-
-class PhoneAlreadyVerifiedError(Exception):
     pass
 
 
@@ -89,37 +80,6 @@ def register_user(db: Session, data: UserCreate) -> User:
     db.refresh(user)
     logger.info("user registered user_id=%s referred_by=%s", user.id, user.referred_by_id)
     return user
-
-
-def create_phone_verification_code(db: Session, user: User) -> str:
-    code = PhoneVerificationCode(user_id=user.id)
-    db.add(code)
-    db.commit()
-    db.refresh(code)
-    return code.code
-
-
-def verify_phone_code(db: Session, user: User, code: str) -> None:
-    if user.phone_verified:
-        raise PhoneAlreadyVerifiedError(user.id)
-
-    record = (
-        db.query(PhoneVerificationCode)
-        .filter(
-            PhoneVerificationCode.user_id == user.id,
-            PhoneVerificationCode.code == code,
-            PhoneVerificationCode.consumed_at.is_(None),
-            PhoneVerificationCode.expires_at >= datetime.utcnow(),
-        )
-        .order_by(PhoneVerificationCode.created_at.desc())
-        .first()
-    )
-    if record is None:
-        raise InvalidOrExpiredPhoneCodeError(user.id)
-
-    record.consumed_at = datetime.utcnow()
-    user.phone_verified = True
-    db.commit()
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User:
@@ -180,3 +140,60 @@ def delete_expired_reset_tokens(db: Session) -> int:
     )
     db.commit()
     return deleted_count
+
+
+def authenticate_or_create_firebase_user(db: Session, decoded_token: dict) -> User:
+    """Finds or provisions a User from a verified Firebase ID token."""
+    firebase_uid = decoded_token.get("uid")
+    if not firebase_uid:
+        raise ValueError("Decoded Firebase token does not contain a valid uid")
+
+    email = decoded_token.get("email")
+    phone_number = decoded_token.get("phone_number")
+    display_name = decoded_token.get("name") or (phone_number or "Buddy User")
+
+    # 1. Search by firebase_uid
+    user = db.query(User).filter(User.firebase_uid == firebase_uid).first()
+    if user:
+        if not user.phone_verified and phone_number:
+            user.phone_verified = True
+            db.commit()
+        return user
+
+    # 2. Search by phone_number if available
+    if phone_number:
+        user = db.query(User).filter(User.phone_number == phone_number).first()
+        if user:
+            user.firebase_uid = firebase_uid
+            user.phone_verified = True
+            db.commit()
+            return user
+
+    # 3. Search by email if available
+    if email:
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            user.firebase_uid = firebase_uid
+            if phone_number and not user.phone_verified:
+                user.phone_verified = True
+            db.commit()
+            return user
+
+    # 4. Provision new user if not found
+    fallback_email = email or f"{firebase_uid}@firebase.findyourbuddy.app"
+    fallback_phone = phone_number or f"+90500{firebase_uid[:8].lower()}"
+
+    new_user = User(
+        email=fallback_email,
+        phone_number=fallback_phone,
+        hashed_password=hash_password(f"firebase_{firebase_uid}"),
+        display_name=display_name,
+        firebase_uid=firebase_uid,
+        phone_verified=True if phone_number is not None else False,
+        referral_code=_generate_referral_code(db),
+        accepted_terms_at=datetime.utcnow(),
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user

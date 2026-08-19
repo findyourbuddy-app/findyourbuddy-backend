@@ -18,83 +18,6 @@ from app.models.user_photo import UserPhoto
 logger = logging.getLogger(__name__)
 
 
-def send_verification_success_email(user: User) -> None:
-    """Sends a confirmation email via SMTP notifying the user that their profile has been photo verified."""
-    settings = get_settings()
-    if not settings.smtp_username or not user.email:
-        logger.info(f"SMTP not configured. Verified confirmation email logged for {user.email}")
-        return
-
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "🎉 Tebrikler! Profiliniz Mavi Tik 🔵 ile Doğrulandı"
-        msg["From"] = settings.smtp_sender
-        msg["To"] = user.email
-
-        html_content = f"""
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-            <h2 style="color: #6C5CE7;">Tebrikler {user.display_name}! 🔵</h2>
-            <p>Canlı selfie doğrulamanız Yapay Zeka Vision sistemi tarafından başarıyla onaylandı.</p>
-            <p>Hesabınız artık <b>Mavi Tik 🔵 (Fotoğraf Onaylı Profil)</b> rozetine sahip!</p>
-            <br>
-            <p>Keyifli ve güvenli kanka buluşmaları dileriz,<br><b>FindYourBuddy Ekibi</b></p>
-        </div>
-        """
-        msg.attach(MIMEText(html_content, "html"))
-
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-            server.starttls()
-            server.login(settings.smtp_username, settings.smtp_password or "")
-            server.send_message(msg)
-        logger.info(f"Verification confirmation email sent to {user.email}")
-    except Exception as e:
-        logger.error(f"Failed to send verification confirmation email: {e}")
-
-
-def send_verification_rejection_email(user: User, reason: str) -> None:
-    """Sends an email notification via SMTP when a user's photo verification selfie fails."""
-    settings = get_settings()
-    if not settings.smtp_username or not user.email:
-        logger.info(f"SMTP not configured. Verification rejection email logged for {user.email}")
-        return
-
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "⚠️ Profil Fotoğraf Doğrulaması Hakkında"
-        msg["From"] = settings.smtp_sender
-        msg["To"] = user.email
-
-        html_content = f"""
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-            <h2>Merhaba {user.display_name},</h2>
-            <p>Çekmiş olduğunuz canlı doğrulama selfie'si Yapay Zeka Vision analizi sonucunda profil fotoğrafınızla uyuşmamıştır.</p>
-            <div style="background-color: #FFF3F3; padding: 12px; border-left: 4px solid #FF6B6B; margin: 16px 0;">
-                <b>Açıklama:</b> {reason}
-            </div>
-            <p>Lütfen yüzünüzün net göründüğü yeni bir selfie çekerek Mavi Tik doğrulamasını tekrar deneyiniz.</p>
-            <br>
-            <p><b>FindYourBuddy Ekibi</b></p>
-        </div>
-        """
-        msg.attach(MIMEText(html_content, "html"))
-
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
-            server.starttls()
-            server.login(settings.smtp_username, settings.smtp_password or "")
-            server.send_message(msg)
-        logger.info(f"Verification rejection email sent to {user.email}")
-    except Exception as e:
-        logger.error(f"Failed to send verification rejection email: {e}")
-
-
 def _resolve_image_to_data_uri_or_url(photo_url: str, public_base: str, media_root: str = "media") -> str:
     """Converts local file paths or LAN/localhost URLs to base64 data URIs so cloud Vision LLMs
     (like Novita AI) can access image binaries directly in local development environments."""
@@ -164,7 +87,12 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
         user.verification_status = "verified"
         db.commit()
         db.refresh(user)
-        send_verification_success_email(user)
+        try:
+            from app.core.notifications import get_notification_sender
+            from app.services.notification_service import notify_photo_verification_result
+            notify_photo_verification_result(db, get_notification_sender(), user.id, verified=True)
+        except Exception:
+            pass
         return {
             "verified": True,
             "message": "Profil fotoğrafınız başarıyla doğrulandı! Mavi Tik rozetiniz tanımlandı. 🔵",
@@ -253,7 +181,12 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
                 user.verification_status = "verified"
                 db.commit()
                 db.refresh(user)
-                send_verification_success_email(user)
+                try:
+                    from app.core.notifications import get_notification_sender
+                    from app.services.notification_service import notify_photo_verification_result
+                    notify_photo_verification_result(db, get_notification_sender(), user.id, verified=True)
+                except Exception:
+                    pass
                 return {
                     "verified": True,
                     "message": "Profil fotoğrafınız AI Vision tarafından başarıyla doğrulandı! Mavi Tik 🔵 rozetiniz hesabınıza eklendi.",
@@ -263,7 +196,12 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
                 user.verification_status = "rejected"
                 db.commit()
                 db.refresh(user)
-                send_verification_rejection_email(user, reason)
+                try:
+                    from app.core.notifications import get_notification_sender
+                    from app.services.notification_service import notify_photo_verification_result
+                    notify_photo_verification_result(db, get_notification_sender(), user.id, verified=False, reason=reason)
+                except Exception:
+                    pass
                 return {
                     "verified": False,
                     "message": f"Fotoğraf doğrulaması başarısız: {reason}",
@@ -276,7 +214,12 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
     user.verification_status = "verified"
     db.commit()
     db.refresh(user)
-    send_verification_success_email(user)
+    try:
+        from app.core.notifications import get_notification_sender
+        from app.services.notification_service import notify_photo_verification_result
+        notify_photo_verification_result(db, get_notification_sender(), user.id, verified=True)
+    except Exception:
+        pass
     return {
         "verified": True,
         "message": "Profil fotoğrafınız başarıyla doğrulandı! Mavi Tik 🔵 rozetiniz tanımlandı.",

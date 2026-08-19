@@ -46,3 +46,28 @@ def mark_notifications_as_read(db: Session, user_id: int) -> int:
         notification.is_read = True
     db.commit()
     return len(unread)
+
+
+def notify_photo_verification_result(
+    db: Session, sender: NotificationSender, user_id: int, verified: bool, reason: str | None = None
+) -> None:
+    if verified:
+        title = "Profil Doğrulandı! 🔵"
+        body = "Tebrikler! Canlı selfie doğrulamanız onaylandı ve Mavi Tik 🔵 rozetiniz aktif edildi."
+    else:
+        title = "Profil Doğrulaması Başarısız ⚠️"
+        body = f"Selfie doğrulamanız onaylanamadı: {reason or 'Profil fotoğrafıyla uyuşmadı.'}"
+
+    sender.send(user_id, title, body)
+    db.add(Notification(user_id=user_id, title=title, body=body))
+    db.commit()
+
+
+def notify_event_approved(
+    db: Session, sender: NotificationSender, user_id: int, event_title: str
+) -> None:
+    title = "Etkinliğin Onaylandı! 🚀"
+    body = f"Oluşturduğun '{event_title}' etkinliği onaylandı ve yayına alındı."
+    sender.send(user_id, title, body)
+    db.add(Notification(user_id=user_id, title=title, body=body))
+    db.commit()
