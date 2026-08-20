@@ -12,6 +12,7 @@ from app.database import Base, get_db
 from app.main import app
 import app.core.email as email_module
 import app.core.password_reset as password_reset_module
+import app.services.llm_moderation_service as llm_moderation_module
 
 
 class FakeNotificationSender:
@@ -61,6 +62,18 @@ def _no_real_emails(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(password_reset_module, "send_plain_email", lambda *a, **k: True)
     monkeypatch.setattr(email_module, "send_plain_email", lambda *a, **k: True)
     monkeypatch.setattr(email_module, "send_html_email", lambda *a, **k: True)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_llm_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Event creation moderates content and classifies its category through a
+    live Novita AI call when NOVITA_API_KEY is set (it is, in this project's
+    .env) -- without this, every test that creates an event makes a real,
+    slow, non-deterministic network call. Auto-approve with no category
+    override reproduces the same behavior the app already falls back to when
+    no API key is configured."""
+    monkeypatch.setattr(llm_moderation_module, "evaluate_event_with_llm", lambda event: (True, None))
+    monkeypatch.setattr(llm_moderation_module, "classify_user_event_category_with_llm", lambda title, description=None: None)
 
 
 @pytest.fixture()
