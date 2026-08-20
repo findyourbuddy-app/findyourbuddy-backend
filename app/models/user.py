@@ -44,6 +44,7 @@ class User(Base):
     longitude: Mapped[float | None] = mapped_column(default=None)
     photo_url: Mapped[str | None] = mapped_column(default=None)
     trust_score: Mapped[int] = mapped_column(default=0)
+    trust_score_low_since: Mapped[datetime | None] = mapped_column(default=None)
 
     referral_code: Mapped[str] = mapped_column(String(12), unique=True, index=True)
     referred_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None)

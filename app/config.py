@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     event_retention_days: int = 0
     scheduler_interval_hours: float = 6.0
 
+    # Accounts are suspended (is_active=False) once trust_score has stayed
+    # below the threshold for this many consecutive days -- not on a single
+    # low reading, so one bad night doesn't nuke an otherwise good account.
+    trust_score_suspension_threshold: int = -5
+    trust_score_suspension_grace_days: int = 14
+
     geocoding_base_url: str = "https://nominatim.openstreetmap.org"
     geocoding_user_agent: str = "findyourbuddy-app/0.1 (contact@findyourbuddy.dev)"
 
