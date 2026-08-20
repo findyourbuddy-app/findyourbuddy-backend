@@ -57,6 +57,20 @@ class EventRead(BaseModel):
     is_ticket_verified: bool = False
 
 
+class EventPublicSummary(BaseModel):
+    """Minimal, privacy-safe event summary shown on another user's profile
+    card (e.g. while swiping) -- deliberately excludes attendee lists,
+    tickets and other detail only relevant to actual attendees."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    category: str
+    starts_at: datetime
+    location_name: str
+
+
 class EventCheckIn(BaseModel):
     latitude: float
     longitude: float

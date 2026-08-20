@@ -17,6 +17,7 @@ class EventAttendance(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     status: Mapped[str] = mapped_column(String(50), default="approved", server_default="approved")
     checked_in_at: Mapped[datetime | None] = mapped_column(default=None)
+    no_show_penalized_at: Mapped[datetime | None] = mapped_column(default=None)
     ticket_image_url: Mapped[str | None] = mapped_column(String(500), default=None)
     ticket_decoded_text: Mapped[str | None] = mapped_column(String(500), default=None)
     ticket_verified_at: Mapped[datetime | None] = mapped_column(default=None)

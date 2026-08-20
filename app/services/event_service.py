@@ -15,6 +15,8 @@ from app.schemas.event import EventCreate
 
 CHECK_IN_RADIUS_KM = 1.0
 CHECK_IN_TRUST_SCORE_BONUS = 1
+CHECK_IN_WINDOW_AFTER_HOURS = 8
+NO_SHOW_TRUST_SCORE_PENALTY = 1
 
 
 class WeeklyEventCreationLimitExceededError(Exception):
@@ -115,7 +117,7 @@ def check_in_to_event(
 
     now = datetime.utcnow()
     window_start = event.starts_at - timedelta(hours=1)
-    window_end = event.starts_at + timedelta(hours=8)
+    window_end = event.starts_at + timedelta(hours=CHECK_IN_WINDOW_AFTER_HOURS)
     if not (window_start <= now <= window_end):
         raise EventCheckInOutsideWindowError(event_id)
 
@@ -132,6 +134,35 @@ def check_in_to_event(
         db.commit()
         db.refresh(attendance)
     return attendance
+
+
+def apply_no_show_penalties(db: Session) -> int:
+    """Penalizes trust_score for attendees who RSVP'd but never checked in,
+    once the event's check-in window has closed. Runs from the scheduler --
+    a no-show can only be judged after the event is already over, so this
+    can't happen at request time like the check-in bonus does."""
+    cutoff = datetime.utcnow() - timedelta(hours=CHECK_IN_WINDOW_AFTER_HOURS)
+    attendances = (
+        db.query(EventAttendance)
+        .join(Event, Event.id == EventAttendance.event_id)
+        .filter(
+            EventAttendance.status == "approved",
+            EventAttendance.checked_in_at.is_(None),
+            EventAttendance.no_show_penalized_at.is_(None),
+            Event.starts_at <= cutoff,
+        )
+        .all()
+    )
+    penalized = 0
+    for attendance in attendances:
+        user = db.get(User, attendance.user_id)
+        if user is not None:
+            user.trust_score -= NO_SHOW_TRUST_SCORE_PENALTY
+        attendance.no_show_penalized_at = datetime.utcnow()
+        penalized += 1
+    if penalized:
+        db.commit()
+    return penalized
 
 
 def is_ticket_verified(db: Session, event_id: int, user_id: int) -> bool:

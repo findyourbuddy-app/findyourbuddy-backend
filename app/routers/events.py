@@ -12,7 +12,7 @@ from app.core.rate_limit import event_writes_rate_limit, limiter
 from app.database import get_db
 from app.models.event import Event
 from app.models.user import User
-from app.schemas.event import EventCheckIn, EventCreate, EventCreationQuota, EventRead
+from app.schemas.event import EventCheckIn, EventCreate, EventCreationQuota, EventPublicSummary, EventRead
 from app.schemas.user import UserRead, UserPublic
 from app.services.event_service import (
     EventCheckInOutsideWindowError,
@@ -146,6 +146,18 @@ def read_my_attending_events(
         )
         for event in events
     ]
+
+
+@router.get("/user/{user_id}/upcoming", response_model=list[EventPublicSummary])
+def read_user_upcoming_events(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[Event]:
+    """Public, minimal summary of another user's upcoming events -- shown
+    under their card while swiping/viewing their profile, so buddies can see
+    what they're actually into rather than just their bio."""
+    return list_attending_events(db, user_id, upcoming_only=True)[:5]
 
 
 @router.get("/me/creation-quota", response_model=EventCreationQuota)

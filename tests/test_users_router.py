@@ -91,6 +91,7 @@ def test_upload_profile_photo_sets_photo_url(
     from app.config import get_settings
 
     get_settings.cache_clear()
+    monkeypatch.setenv("MEDIA_STORAGE_BACKEND", "local")
     monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
     monkeypatch.setenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
 
@@ -275,7 +276,10 @@ def test_export_current_user_data_includes_own_records(
     assert body["events_created"][0]["title"] == "Trail run"
     assert body["matches"] == []
     assert body["messages_sent"] == []
-    assert body["notifications"] == []
+    # Event creation approval sends the creator a notification -- see
+    # llm_moderation_service.send_event_approval_email.
+    assert len(body["notifications"]) == 1
+    assert "onayland" in body["notifications"][0]["body"]
     assert body["bookmarks"] == []
     assert "exported_at" in body
 

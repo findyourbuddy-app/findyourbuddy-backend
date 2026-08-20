@@ -15,6 +15,7 @@ from app.routers import (
     admin,
     auth,
     bookmarks,
+    double_buddy,
     events,
     geocoding,
     health,
@@ -27,6 +28,7 @@ from app.routers import (
     swipes,
     users,
 )
+
 
 configure_logging()
 settings = get_settings()
@@ -107,7 +109,9 @@ routers = [
     subscriptions.router,
     internal.router,
     geocoding.router,
+    double_buddy.router,
 ]
+
 
 for r in routers:
     app.include_router(r)

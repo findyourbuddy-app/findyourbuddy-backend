@@ -133,7 +133,9 @@ def test_send_pending_feedback_notifications_notifies_both_participants_once(
 
     assert sent_first == 2
     assert sent_second == 0
-    assert len(list_notifications(db_session, user_a)) == 1
+    # user_a also created the match's event, so they additionally got an
+    # event-approval notification on top of the feedback-request one.
+    assert len(list_notifications(db_session, user_a)) == 2
     assert len(list_notifications(db_session, user_b)) == 1
 
 

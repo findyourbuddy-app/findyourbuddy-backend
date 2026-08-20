@@ -57,9 +57,9 @@ def evaluate_event_with_llm(event: Event) -> tuple[bool, str | None]:
     prompt = (
         "Etkinlik Moderasyonu: Aşağıdaki sosyal etkinlik teklifini değerlendir.\n"
         "Kurallar:\n"
-        "1. Küfür, nefret söylemi, yasadışı veya cinsel içerik barındıran metinleri REDDET.\n"
+        "1. Küfür, nefret söylemi, yasadışı, cinsel/+18 veya yetişkinlere özgü içerik barındıran metinleri REDDET.\n"
         "2. Anlamsız harf yığınları, troll amaçlı veya sahte etkinlikleri REDDET.\n"
-        "3. Düzgün, topluluğa uygun sosyal buluşma tekliflerini ONAYLA.\n\n"
+        "3. Düzgün, topluluğa uygun, mümkün olduğunca temiz sosyal buluşma tekliflerini ONAYLA.\n\n"
         f"Başlık: {safe_title}\n"
         f"Açıklama: {safe_description or 'Açıklama yok'}\n"
         f"Kategori: {event.category}\n"
@@ -160,6 +160,60 @@ def send_event_rejection_email(creator: User, event: Event, reason: str | None, 
         logger.error(f"Failed to send event rejection notification: {exc}")
 
 
+def classify_user_event_category_with_llm(title: str, description: str | None = None) -> str | None:
+    """Lets the LLM pick a short, clean category label for a user-created event,
+    without constraining it to the app's predefined scraped-event category list.
+    Returns None (keep whatever the user picked) if the LLM is unavailable or fails."""
+    settings = get_settings()
+    if not settings.novita_api_key:
+        return None
+
+    from app.core.sanitizer import sanitize_prompt_input
+
+    safe_title = sanitize_prompt_input(title, max_length=150)
+    safe_description = sanitize_prompt_input(description, max_length=500)
+
+    prompt = (
+        "Aşağıdaki sosyal etkinliğe en uygun KISA kategori etiketini belirle.\n"
+        "Kurallar:\n"
+        "1. Etikette en fazla 2 kelime kullan, Türkçe ve küçük harf yaz (örn: 'kahve buluşması', 'yürüyüş', 'konser').\n"
+        "2. Sabit bir listeye bağlı kalma, içeriğe en uygun anlamlı etiketi kendin üret.\n"
+        "3. Etiket anlamsız, saçma veya belirsiz olmasın.\n\n"
+        f"Başlık: {safe_title}\n"
+        f"Açıklama: {safe_description or 'Açıklama yok'}\n\n"
+        "SADECE ham JSON dön:\n"
+        '{"category": "kahve buluşması"}'
+    )
+
+    base_url = settings.novita_base_url.rstrip("/")
+    messages = [
+        {"role": "system", "content": "Sen yalnızca JSON çıktısı veren bir AI asistanısın."},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        url = f"{base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {settings.novita_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": settings.novita_model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+        }
+        res = httpx.post(url, headers=headers, json=payload, timeout=5.0)
+        if res.status_code == 200:
+            parsed = json.loads(res.json()["choices"][0]["message"]["content"])
+            category = str(parsed.get("category", "")).strip().lower()
+            if category:
+                return category[:50]
+    except Exception as e:
+        logger.warning(f"LLM freeform category classification error: {e}")
+
+    return None
+
+
 def moderate_new_event(db: Session, event: Event) -> Event:
     """Runs collision checks and LLM moderation on a newly created event."""
     if event.creator_id is None:
@@ -182,6 +236,10 @@ def moderate_new_event(db: Session, event: Event) -> Event:
     approved, rejection_reason = evaluate_event_with_llm(event)
     event.is_approved = approved
     event.approval_rejection_reason = rejection_reason
+    if approved:
+        ai_category = classify_user_event_category_with_llm(event.title, event.description)
+        if ai_category:
+            event.category = ai_category
     db.commit()
     db.refresh(event)
     if creator:
