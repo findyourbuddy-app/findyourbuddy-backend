@@ -148,3 +148,94 @@ def generate_llm_kanka_synergy(user1: User, user2: User) -> dict:
         ],
         "shared_hobbies": shared_hobbies,
     }
+
+
+def generate_llm_icebreakers(user1: User, user2: User) -> list[dict]:
+    """Generates personalized AI conversation starters & voice challenges between two users."""
+    settings = get_settings()
+    hobbies1 = set(user1.hobbies or [])
+    hobbies2 = set(user2.hobbies or [])
+    shared_hobbies = list(hobbies1.intersection(hobbies2))
+
+    fallback_icebreakers = [
+        {"text": f"Selam {user2.display_name}! Katılacağımız etkinlik için aşırı heyecanlıyım, buluşma noktası neresi olsun? ☕", "type": "text"},
+        {"text": "10 saniyelik ses kaydıyla en sevdiğin film/dizi repliğini söyleme meydan okuması! 🎙️", "type": "voice"},
+        {"text": f"Hobilerine baktım da {shared_hobbies[0] if shared_hobbies else 'aktivite'} ilgimi çekti, en çok hangisinde vakit geçiriyorsun? 🎨", "type": "text"},
+    ]
+
+    if not settings.novita_api_key:
+        return fallback_icebreakers
+
+    from app.core.sanitizer import sanitize_prompt_input
+
+    safe_name1 = sanitize_prompt_input(user1.display_name, max_length=50)
+    safe_name2 = sanitize_prompt_input(user2.display_name, max_length=50)
+    safe_bio1 = sanitize_prompt_input(user1.bio, max_length=200)
+    safe_bio2 = sanitize_prompt_input(user2.bio, max_length=200)
+
+    prompt = (
+        "Sen gelişmiş bir Sosyal Buz Kırıcı (Icebreaker) Yapay Zekasısın.\n"
+        "İki kullanıcının sohbet başlatabilmesi için 3 adet yaratıcı, samimi ve Türkçe tanışma önerisi üret.\n"
+        "Biri mutlaka sesli mesaj meydan okuması (type='voice') olsun, diğer ikisi eğlenceli metin mesajı (type='text') olsun.\n\n"
+        f"Kullanıcı 1 ({safe_name1}): Burç={user1.zodiac_sign}, Hobiler={user1.hobbies}, Biyo='{safe_bio1}'\n"
+        f"Kullanıcı 2 ({safe_name2}): Burç={user2.zodiac_sign}, Hobiler={user2.hobbies}, Biyo='{safe_bio2}'\n\n"
+        "Yanıtı SADECE şu formatta bir JSON objesi olarak dön (markdown yazma):\n"
+        "{\n"
+        '  "icebreakers": [\n'
+        '    {"text": "Selam! Sinema ve kahve ikilimiz harika görünüyor, favori mekanın neresi? ☕", "type": "text"},\n'
+        '    {"text": "10 saniyelik ses kaydıyla en sevdiğin dizi repliğini söyle! 🎙️", "type": "voice"},\n'
+        '    {"text": "Astrolojik olarak element sinerjimiz %90, etkinliğe birlikte gidiyor muyuz? 🎶", "type": "text"}\n'
+        "  ]\n"
+        "}"
+    )
+
+    base_url = settings.novita_base_url.rstrip("/")
+    messages = [
+        {"role": "system", "content": "Sen yalnızca JSON çıktısı veren bir AI asistanısın."},
+        {"role": "user", "content": prompt},
+    ]
+
+    raw_content = None
+    if OpenAI is not None:
+        try:
+            client = OpenAI(api_key=settings.novita_api_key, base_url=base_url)
+            response = client.chat.completions.create(
+                model=settings.novita_model,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
+            raw_content = response.choices[0].message.content
+        except Exception as sdk_err:
+            logger.warning(f"OpenAI SDK call for icebreakers failed: {sdk_err}")
+
+    if raw_content is None:
+        url = f"{base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {settings.novita_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": settings.novita_model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+        }
+        try:
+            response = httpx.post(url, headers=headers, json=payload, timeout=6.0)
+            if response.status_code == 200:
+                raw_content = response.json()["choices"][0]["message"]["content"]
+        except Exception as http_err:
+            logger.error(f"HTTP call for icebreakers failed: {http_err}")
+
+    if raw_content:
+        try:
+            cleaned = re.sub(r"```json\s*", "", raw_content)
+            cleaned = re.sub(r"```\s*", "", cleaned).strip()
+            parsed = json.loads(cleaned)
+            items = parsed.get("icebreakers", [])
+            if isinstance(items, list) and len(items) > 0:
+                return items
+        except Exception as parse_err:
+            logger.error(f"Failed to parse LLM icebreaker response: {parse_err}")
+
+    return fallback_icebreakers
+

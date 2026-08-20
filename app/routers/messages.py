@@ -131,9 +131,26 @@ def mark_read(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this match"
         ) from exc
-    except BlockedParticipantError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access messages with a blocked user"
-        ) from exc
-
     return MessagesMarkedRead(count=count)
+
+
+@router.get("/icebreakers")
+def get_icebreakers(
+    match_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    match = db.get(Match, match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+    if current_user.id not in (match.user_a_id, match.user_b_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this match")
+
+    other_user_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
+    other_user = db.get(User, other_user_id)
+    if not other_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
+
+    from app.services.llm_matching_service import generate_llm_icebreakers
+    return generate_llm_icebreakers(current_user, other_user)
+
