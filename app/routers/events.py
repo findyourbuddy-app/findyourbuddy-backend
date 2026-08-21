@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import iyzipay
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, responses, status
@@ -179,6 +179,7 @@ def get_creation_quota(
 
 @router.post("/credits/checkout-session")
 def create_credits_checkout_session(
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Creates a hosted Iyzico checkout form session for buying extra weekly
@@ -190,9 +191,13 @@ def create_credits_checkout_session(
         "base_url": settings.iyzico_base_url,
     }
 
+    now = datetime.now(timezone.utc)
+    client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "0.0.0.0").split(",")[0].strip()
+    gsm = current_user.phone_number or "+905300000000"
+
     request_data = {
         "locale": "tr",
-        "conversationId": f"credits_{current_user.id}_{int(datetime.utcnow().timestamp())}",
+        "conversationId": f"credits_{current_user.id}_{int(now.timestamp())}",
         "price": EVENT_CREDITS_PRICE_TRY,
         "paidPrice": EVENT_CREDITS_PRICE_TRY,
         "currency": "TRY",
@@ -203,13 +208,13 @@ def create_credits_checkout_session(
             "id": str(current_user.id),
             "name": current_user.display_name or "Buddy",
             "surname": "User",
-            "gsmNumber": "+905300000000",
+            "gsmNumber": gsm,
             "email": current_user.email,
             "identityNumber": "11111111111",
-            "lastLoginDate": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            "registrationDate": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            "registrationAddress": "Kadikoy, Istanbul",
-            "ip": "85.100.100.100",
+            "lastLoginDate": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "registrationDate": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "registrationAddress": "Turkey",
+            "ip": client_ip,
             "city": "Istanbul",
             "country": "Turkey",
             "zipCode": "34700",
@@ -218,14 +223,14 @@ def create_credits_checkout_session(
             "contactName": current_user.display_name or "Buddy User",
             "city": "Istanbul",
             "country": "Turkey",
-            "address": "Kadikoy, Istanbul",
+            "address": "Turkey",
             "zipCode": "34700",
         },
         "billingAddress": {
             "contactName": current_user.display_name or "Buddy User",
             "city": "Istanbul",
             "country": "Turkey",
-            "address": "Kadikoy, Istanbul",
+            "address": "Turkey",
             "zipCode": "34700",
         },
         "basketItems": [

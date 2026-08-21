@@ -1,7 +1,7 @@
 import io
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import iyzipay
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, responses, status
@@ -348,7 +348,6 @@ def activate_boost(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    from datetime import datetime, timedelta
     from app.services.subscription_service import is_premium
     
     premium = is_premium(db, current_user.id)
@@ -364,7 +363,7 @@ def activate_boost(
     if current_user.boosts_balance > 0:
         current_user.boosts_balance -= 1
     
-    current_user.boosted_until = datetime.utcnow() + timedelta(minutes=60)
+    current_user.boosted_until = datetime.now(timezone.utc) + timedelta(minutes=60)
     db.commit()
     db.refresh(current_user)
     return current_user
@@ -372,6 +371,7 @@ def activate_boost(
 
 @router.post("/me/purchase/checkout-session")
 def create_purchase_checkout_session(
+    request: Request,
     payload: PurchaseRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -393,9 +393,13 @@ def create_purchase_checkout_session(
         "secret_key": settings.iyzico_secret_key,
         "base_url": settings.iyzico_base_url,
     }
+    now = datetime.now(timezone.utc)
+    client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "0.0.0.0").split(",")[0].strip()
+    gsm = current_user.phone_number or "+905300000000"
+
     request_data = {
         "locale": "tr",
-        "conversationId": f"purchase_{payload.item_type}_{payload.quantity}_{current_user.id}_{int(datetime.utcnow().timestamp())}",
+        "conversationId": f"purchase_{payload.item_type}_{payload.quantity}_{current_user.id}_{int(now.timestamp())}",
         "price": price,
         "paidPrice": price,
         "currency": "TRY",
@@ -406,13 +410,13 @@ def create_purchase_checkout_session(
             "id": str(current_user.id),
             "name": current_user.display_name or "Buddy",
             "surname": "User",
-            "gsmNumber": "+905300000000",
+            "gsmNumber": gsm,
             "email": current_user.email,
             "identityNumber": "11111111111",
-            "lastLoginDate": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            "registrationDate": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            "registrationAddress": "Kadikoy, Istanbul",
-            "ip": "85.100.100.100",
+            "lastLoginDate": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "registrationDate": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "registrationAddress": "Turkey",
+            "ip": client_ip,
             "city": "Istanbul",
             "country": "Turkey",
             "zipCode": "34700",
