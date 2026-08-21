@@ -61,6 +61,8 @@ def list_bookmarks(
         .limit(limit)
         .all()
     )
+    if not bookmarks:
+        return []
     events_by_id = {
         event.id: event
         for event in db.query(Event).filter(Event.id.in_([b.event_id for b in bookmarks])).all()

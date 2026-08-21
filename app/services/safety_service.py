@@ -87,11 +87,13 @@ def list_my_blocks(db: Session, user_id: int) -> list[tuple[Block, User]]:
         .order_by(Block.created_at.desc())
         .all()
     )
+    if not blocks:
+        return []
     users_by_id = {
         user.id: user
         for user in db.query(User).filter(User.id.in_([b.blocked_id for b in blocks])).all()
     }
-    return [(block, users_by_id[block.blocked_id]) for block in blocks]
+    return [(block, users_by_id[block.blocked_id]) for block in blocks if block.blocked_id in users_by_id]
 
 
 def create_report(db: Session, reporter_id: int, data: ReportCreate) -> Report:

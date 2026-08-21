@@ -100,15 +100,11 @@ def request_reset(
     reset_sender: PasswordResetSender = Depends(get_password_reset_sender),
 ) -> dict:
     user = db.query(User).filter(User.email == data.email.strip().lower()).first()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bu e-posta adresiyle kayıtlı bir hesap bulunamadı."
-        )
-    reset_token = request_password_reset(db, user.email)
-    if reset_token is not None:
-        reset_sender.send(user.email, reset_token)
-    return {"message": "Sıfırlama kodu oluşturuldu.", "reset_code": reset_token}
+    if user is not None:
+        reset_token = request_password_reset(db, user.email)
+        if reset_token is not None:
+            reset_sender.send(user.email, reset_token)
+    return {"message": "Eğer bu e-posta kayıtlıysa, sıfırlama kodu gönderildi."}
 
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
@@ -124,7 +120,9 @@ def confirm_reset(request: Request, data: PasswordResetConfirm, db: Session = De
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(auth_rate_limit)
 def change_my_password(
+    request: Request,
     data: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -145,13 +143,16 @@ def firebase_login(
     data: FirebaseLoginRequest,
     db: Session = Depends(get_db),
 ) -> Token:
+    import logging
     import firebase_admin.auth
+    _firebase_logger = logging.getLogger(__name__)
     try:
         decoded_token = firebase_admin.auth.verify_id_token(data.id_token)
     except Exception as exc:
+        _firebase_logger.warning("Firebase token verification failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid Firebase ID Token: {exc}",
+            detail="Geçersiz veya süresi dolmuş kimlik doğrulama jetonu.",
         ) from exc
 
     user = authenticate_or_create_firebase_user(db, decoded_token)
