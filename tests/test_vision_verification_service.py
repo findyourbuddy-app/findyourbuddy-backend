@@ -25,18 +25,45 @@ def test_verify_user_photo_without_profile_photo(db_session) -> None:
     assert "bulunamadı" in result["message"]
 
 
-def test_verify_user_photo_without_api_key_fallback(db_session, monkeypatch) -> None:
+def test_verify_user_photo_without_api_key_in_production_fails(db_session, monkeypatch) -> None:
     get_settings.cache_clear()
     monkeypatch.setenv("NOVITA_API_KEY", "")
+    monkeypatch.setenv("ENVIRONMENT", "production")
 
     user = register_user(
         db_session,
         UserCreate(
-            email="test@example.com",
+            email="prod_no_key@example.com",
             password="Password123!",
-            display_name="Test",
+            display_name="Prod No Key",
             accepted_terms=True,
             phone_number="5000000011"
+        )
+    )
+    user.photo_url = "http://example.com/main.jpg"
+    db_session.commit()
+
+    result = verify_user_photo_with_vision(db_session, user, "http://example.com/selfie.jpg")
+    assert result["verified"] is False
+    assert user.is_verified is False
+    assert "kullanılamıyor" in result["message"]
+
+    get_settings.cache_clear()
+
+
+def test_verify_user_photo_without_api_key_in_development_auto_approves(db_session, monkeypatch) -> None:
+    get_settings.cache_clear()
+    monkeypatch.setenv("NOVITA_API_KEY", "")
+    monkeypatch.setenv("ENVIRONMENT", "development")
+
+    user = register_user(
+        db_session,
+        UserCreate(
+            email="dev_no_key@example.com",
+            password="Password123!",
+            display_name="Dev No Key",
+            accepted_terms=True,
+            phone_number="5000000014"
         )
     )
     user.photo_url = "http://example.com/main.jpg"
@@ -48,6 +75,7 @@ def test_verify_user_photo_without_api_key_fallback(db_session, monkeypatch) -> 
     assert user.verification_status == "verified"
 
     get_settings.cache_clear()
+
 
 
 def test_verify_user_photo_success_with_openai_client(db_session, monkeypatch) -> None:
