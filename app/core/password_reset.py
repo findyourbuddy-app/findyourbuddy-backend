@@ -35,4 +35,5 @@ class SMTPPasswordResetSender:
 
 @lru_cache
 def get_password_reset_sender() -> PasswordResetSender:
-    return SMTPPasswordResetSender()
+    return LoggingPasswordResetSender()
+
