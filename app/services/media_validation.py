@@ -5,6 +5,8 @@ from PIL import Image, UnidentifiedImageError
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8MB
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
+MAX_DIMENSION = 1600
+JPEG_QUALITY = 82
 
 
 class InvalidImageError(Exception):
@@ -35,3 +37,16 @@ def validate_image(file: BinaryIO) -> bytes:
         raise InvalidImageError(f"Unsupported image format: {image.format}")
 
     return data
+
+
+def compress_image(data: bytes) -> bytes:
+    """Downscales and re-encodes an already-validated image as JPEG so
+    uploads served to the app stay small and fast to load, regardless of
+    how large the original phone photo was."""
+    image = Image.open(io.BytesIO(data))
+    image = image.convert("RGB")
+    image.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.LANCZOS)
+
+    output = io.BytesIO()
+    image.save(output, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+    return output.getvalue()

@@ -108,7 +108,7 @@ def test_upload_profile_photo_sets_photo_url(
     assert response.status_code == 200
     photo_url = response.json()["photo_url"]
     assert photo_url.startswith("http://127.0.0.1:8000/media/")
-    assert photo_url.endswith(".png")
+    assert photo_url.endswith(".jpg")
 
     get_settings.cache_clear()
     get_media_storage.cache_clear()

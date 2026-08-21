@@ -150,18 +150,26 @@ def generate_llm_kanka_synergy(user1: User, user2: User) -> dict:
     }
 
 
+_ICEBREAKER_CACHE: dict[tuple[int, int], list[dict]] = {}
+
+
 def generate_llm_icebreakers(user1: User, user2: User) -> list[dict]:
     """Generates personalized AI conversation starters & voice challenges between two users."""
+    cache_key = (min(user1.id, user2.id), max(user1.id, user2.id))
+    if cache_key in _ICEBREAKER_CACHE:
+        return _ICEBREAKER_CACHE[cache_key]
+
     settings = get_settings()
     hobbies1 = set(user1.hobbies or [])
     hobbies2 = set(user2.hobbies or [])
     shared_hobbies = list(hobbies1.intersection(hobbies2))
 
     fallback_icebreakers = [
-        {"text": f"Selam {user2.display_name}! Katılacağımız etkinlik için aşırı heyecanlıyım, buluşma noktası neresi olsun? ☕", "type": "text"},
+        {"text": f"Selam {user2.display_name}! Katılacağımız etkinlik için aşırı heyecanlıyım, ne zaman buluşuyoruz? ☕", "type": "text"},
         {"text": "10 saniyelik ses kaydıyla en sevdiğin film/dizi repliğini söyleme meydan okuması! 🎙️", "type": "voice"},
-        {"text": f"Hobilerine baktım da {shared_hobbies[0] if shared_hobbies else 'aktivite'} ilgimi çekti, en çok hangisinde vakit geçiriyorsun? 🎨", "type": "text"},
+        {"text": f"Hobilerine baktım da {shared_hobbies[0] if shared_hobbies else 'aktivite'} ilgimi çekti, birlikte ne yapıyoruz? 🎨", "type": "text"},
     ]
+
 
     if not settings.novita_api_key:
         return fallback_icebreakers
@@ -233,9 +241,12 @@ def generate_llm_icebreakers(user1: User, user2: User) -> list[dict]:
             parsed = json.loads(cleaned)
             items = parsed.get("icebreakers", [])
             if isinstance(items, list) and len(items) > 0:
+                _ICEBREAKER_CACHE[cache_key] = items
                 return items
         except Exception as parse_err:
             logger.error(f"Failed to parse LLM icebreaker response: {parse_err}")
 
+    _ICEBREAKER_CACHE[cache_key] = fallback_icebreakers
     return fallback_icebreakers
+
 

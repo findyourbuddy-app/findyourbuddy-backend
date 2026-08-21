@@ -21,7 +21,7 @@ from app.schemas.user_photo import UserPhotoRead
 from app.services.device_token_service import register_device_token, unregister_device_token
 from app.services.export_service import export_user_data
 from app.services.media_service import MediaStorage, get_media_storage
-from app.services.media_validation import ImageTooLargeError, InvalidImageError, validate_image
+from app.services.media_validation import ImageTooLargeError, InvalidImageError, compress_image, validate_image
 from app.services.payment_service import claim_payment_callback
 from app.services.user_photo_service import (
     PhotoNotFoundError,
@@ -68,7 +68,8 @@ def _upload_validated_photo(file: UploadFile, storage: MediaStorage) -> str:
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large"
         ) from exc
 
-    return storage.upload(io.BytesIO(data), file.filename or "photo")
+    compressed = compress_image(data)
+    return storage.upload(io.BytesIO(compressed), "photo.jpg")
 
 
 @router.get("/me", response_model=UserRead)
