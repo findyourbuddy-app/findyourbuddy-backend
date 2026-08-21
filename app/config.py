@@ -20,12 +20,6 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24 * 30
     jwt_refresh_expire_days: int = 30
 
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_username: str | None = None
-    smtp_password: str | None = None
-    smtp_sender: str = "noreply@findyourbuddy.com"
-
     daily_swipe_limit: int = 10
     daily_super_like_limit: int = 1
     premium_daily_super_like_limit: int = 5
