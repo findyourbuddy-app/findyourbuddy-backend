@@ -108,13 +108,13 @@ def reset_password(db: Session, token: str, new_password: str) -> None:
     if (
         reset_token is None
         or reset_token.used_at is not None
-        or reset_token.expires_at < datetime.utcnow()
+        or reset_token.expires_at < datetime.now(timezone.utc)
     ):
         raise InvalidOrExpiredResetTokenError(token)
 
     user = db.get(User, reset_token.user_id)
     user.hashed_password = hash_password(new_password)
-    reset_token.used_at = datetime.utcnow()
+    reset_token.used_at = datetime.now(timezone.utc)
     db.commit()
 
 

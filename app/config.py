@@ -75,7 +75,7 @@ class Settings(BaseSettings):
 
     media_root: str = "media"
     media_base_url: str = "/media"
-    public_base_url: str = "http://127.0.0.1:8000"
+    public_base_url: str = ""
 
     # "local" (default, disk-backed) or "s3" (AWS S3 or an S3-compatible
     # provider like Cloudflare R2). The disk backend is fine for a single

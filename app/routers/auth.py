@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.core.deps import get_current_user
 from app.core.password_reset import PasswordResetSender, get_password_reset_sender
@@ -143,13 +147,11 @@ def firebase_login(
     data: FirebaseLoginRequest,
     db: Session = Depends(get_db),
 ) -> Token:
-    import logging
     import firebase_admin.auth
-    _firebase_logger = logging.getLogger(__name__)
     try:
         decoded_token = firebase_admin.auth.verify_id_token(data.id_token)
     except Exception as exc:
-        _firebase_logger.warning("Firebase token verification failed: %s", exc)
+        logger.warning("Firebase token verification failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Geçersiz veya süresi dolmuş kimlik doğrulama jetonu.",
