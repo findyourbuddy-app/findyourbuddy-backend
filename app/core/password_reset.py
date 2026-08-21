@@ -1,5 +1,4 @@
 import logging
-from functools import lru_cache
 from typing import Protocol
 
 from app.core.email import send_plain_email
@@ -33,7 +32,10 @@ class SMTPPasswordResetSender:
         send_plain_email(email, subject, body)
 
 
-@lru_cache
 def get_password_reset_sender() -> PasswordResetSender:
+    from app.config import get_settings
+    settings = get_settings()
+    if settings.smtp_host and settings.smtp_username:
+        return SMTPPasswordResetSender()
     return LoggingPasswordResetSender()
 

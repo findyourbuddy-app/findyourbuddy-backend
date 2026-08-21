@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.deps import get_current_user
-from app.core.rate_limit import ai_rate_limit, limiter
+from app.core.rate_limit import ai_rate_limit, limiter, messages_rate_limit
 from app.database import get_db
 from app.models.user import User
 from app.models.user_photo import UserPhoto
@@ -136,13 +136,19 @@ def upload_profile_photo(
 
 
 @router.post("/me/media", status_code=status.HTTP_201_CREATED)
+@limiter.limit(messages_rate_limit)
 def upload_chat_media(
+    request: Request,
     file: UploadFile,
     current_user: User = Depends(get_current_user),
     storage: MediaStorage = Depends(get_media_storage),
 ) -> dict:
     url = _upload_validated_photo(file, storage)
     return {"url": url}
+
+
+_ALLOWED_VOICE_MIMES = {"audio/m4a", "audio/mp4", "audio/aac", "audio/mpeg", "audio/ogg", "audio/webm"}
+_MAX_VOICE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 @router.post("/me/voice-note", response_model=UserRead)
@@ -152,7 +158,20 @@ def upload_voice_note(
     db: Session = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
 ) -> User:
-    url = storage.upload(file.file, file.filename or "voice_note.m4a")
+    content_type = (file.content_type or "").lower().split(";")[0].strip()
+    if content_type not in _ALLOWED_VOICE_MIMES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported audio format",
+        )
+    data = file.file.read(_MAX_VOICE_BYTES + 1)
+    if len(data) > _MAX_VOICE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Voice note too large (max 5 MB)",
+        )
+    import io
+    url = storage.upload(io.BytesIO(data), file.filename or "voice_note.m4a")
     current_user.voice_note_url = url
     db.commit()
     db.refresh(current_user)

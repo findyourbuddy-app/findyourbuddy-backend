@@ -1,6 +1,9 @@
+import logging
+from contextlib import asynccontextmanager
+
 import sentry_sdk
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, responses
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
@@ -29,9 +32,9 @@ from app.routers import (
     users,
 )
 
-
 configure_logging()
 settings = get_settings()
+_logger = logging.getLogger(__name__)
 
 if settings.sentry_dsn:
     sentry_sdk.init(
@@ -41,11 +44,47 @@ if settings.sentry_dsn:
     )
 
 _is_production = settings.environment == "production"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.core.scheduler import run_cleanup_jobs
+    from app.database import Base, engine
+    from sqlalchemy import inspect, text
+
+    try:
+        Base.metadata.create_all(bind=engine)
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            if "users" in inspector.get_table_names():
+                cols = {c["name"] for c in inspector.get_columns("users")}
+                if "hidden_fields" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN hidden_fields JSON DEFAULT '[]'"))
+                    conn.commit()
+                if "languages_spoken" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN languages_spoken JSON DEFAULT '[]'"))
+                    conn.commit()
+                if "firebase_uid" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN firebase_uid VARCHAR(128)"))
+                    conn.commit()
+    except Exception:
+        _logger.exception("Startup DDL migration failed")
+
+    start_scheduler()
+    try:
+        run_cleanup_jobs()
+    except Exception:
+        _logger.exception("Startup cleanup jobs failed")
+
+    yield
+
+
 app = FastAPI(
     title="FindYourBuddy API",
     docs_url=None if _is_production else "/docs",
     redoc_url=None if _is_production else "/redoc",
     openapi_url=None if _is_production else "/openapi.json",
+    lifespan=lifespan,
 )
 
 app.state.limiter = limiter
@@ -72,7 +111,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from fastapi import Request, responses
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
@@ -87,12 +125,12 @@ async def add_security_headers(request: Request, call_next):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    import logging
-    logging.getLogger("app").error(f"Unhandled server error: {exc}", exc_info=True)
+    _logger.error("Unhandled server error: %s", exc, exc_info=True)
     return responses.JSONResponse(
         status_code=500,
-        content={"detail": "Sunucu tarafında bir hata oluştu. Lütfen tekrar deneyin."}
+        content={"detail": "Sunucu tarafında bir hata oluştu. Lütfen tekrar deneyin."},
     )
+
 
 routers = [
     health.router,
@@ -112,47 +150,14 @@ routers = [
     double_buddy.router,
 ]
 
-
 for r in routers:
     app.include_router(r)
-    app.include_router(r, prefix="/api")
 
 app.mount(
     settings.media_base_url,
     StaticFiles(directory=settings.media_root, check_dir=False),
     name="media",
 )
-
-
-@app.on_event("startup")
-def _start_background_jobs() -> None:
-    from app.core.scheduler import run_cleanup_jobs
-    from app.database import Base, engine
-    from sqlalchemy import text, inspect
-
-    try:
-        Base.metadata.create_all(bind=engine)
-        with engine.connect() as conn:
-            inspector = inspect(engine)
-            if "users" in inspector.get_table_names():
-                cols = {c["name"] for c in inspector.get_columns("users")}
-                if "hidden_fields" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN hidden_fields JSON DEFAULT '[]'"))
-                    conn.commit()
-                if "languages_spoken" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN languages_spoken JSON DEFAULT '[]'"))
-                    conn.commit()
-                if "firebase_uid" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN firebase_uid VARCHAR(128)"))
-                    conn.commit()
-    except Exception:
-        pass
-
-    start_scheduler()
-    try:
-        run_cleanup_jobs()
-    except Exception:
-        pass
 
 
 if __name__ == "__main__":

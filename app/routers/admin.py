@@ -63,6 +63,8 @@ def revoke_user_premium(
 
 from fastapi.responses import HTMLResponse
 import os
+import json
+from html import escape
 
 @router.get("/logs", response_class=HTMLResponse)
 def get_logs(
@@ -72,29 +74,31 @@ def get_logs(
     log_file = "app.log"
     if not os.path.exists(log_file):
         return "<html><body style='background:#121214; color:#fff; text-align:center; padding-top:100px;'><h1>No logs found yet.</h1></body></html>"
-        
+
     try:
         with open(log_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
-            
+
         parsed_logs = []
         for line in reversed(lines[-200:]):
             try:
-                import json
                 parsed_logs.append(json.loads(line))
             except Exception:
                 parsed_logs.append({"timestamp": "", "level": "UNKNOWN", "logger": "root", "message": line})
-                
+
         rows = ""
         for log in parsed_logs:
-            level = log.get("level", "INFO")
+            level = escape(log.get("level", "INFO"))
             color = "#ff4d4d" if level in ("ERROR", "CRITICAL") else "#ffaa00" if level == "WARNING" else "#2eb82e" if level == "INFO" else "#8c8c96"
+            timestamp = escape(str(log.get("timestamp", "")))
+            logger_name = escape(str(log.get("logger", "")))
+            message = escape(str(log.get("message", "")))
             rows += f"""
                 <tr style="border-bottom: 1px solid #2e2e36;">
-                    <td style="padding: 10px; color: #8c8c96; white-space: nowrap;">{log.get("timestamp", "")}</td>
+                    <td style="padding: 10px; color: #8c8c96; white-space: nowrap;">{timestamp}</td>
                     <td style="padding: 10px;"><span style="color: {color}; font-weight: bold; font-size: 11px; border: 1px solid {color}; padding: 2px 6px; border-radius: 4px;">{level}</span></td>
-                    <td style="padding: 10px; color: #9b7bff;">{log.get("logger", "")}</td>
-                    <td style="padding: 10px; word-break: break-all;">{log.get("message", "")}</td>
+                    <td style="padding: 10px; color: #9b7bff;">{logger_name}</td>
+                    <td style="padding: 10px; word-break: break-all;">{message}</td>
                 </tr>
             """
             

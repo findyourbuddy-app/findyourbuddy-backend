@@ -1,7 +1,7 @@
 import logging
 import secrets
 import string
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -65,7 +65,7 @@ def register_user(db: Session, data: UserCreate) -> User:
         email=normalized_email,
         hashed_password=hash_password(data.password),
         display_name=data.display_name,
-        accepted_terms_at=datetime.utcnow(),
+        accepted_terms_at=datetime.now(timezone.utc),
         referral_code=_generate_referral_code(db),
         referred_by_id=inviter.id if inviter is not None else None,
         bonus_swipe_credits=REFERRAL_BONUS_SWIPES if inviter is not None else 0,
@@ -133,7 +133,7 @@ def delete_expired_reset_tokens(db: Session) -> int:
         .filter(
             or_(
                 PasswordResetToken.used_at.is_not(None),
-                PasswordResetToken.expires_at < datetime.utcnow(),
+                PasswordResetToken.expires_at < datetime.now(timezone.utc),
             )
         )
         .delete(synchronize_session=False)
@@ -181,17 +181,17 @@ def authenticate_or_create_firebase_user(db: Session, decoded_token: dict) -> Us
 
     # 4. Provision new user if not found
     fallback_email = email or f"{firebase_uid}@firebase.findyourbuddy.app"
-    fallback_phone = phone_number or f"+90500{firebase_uid[:8].lower()}"
+    fallback_phone = phone_number or f"firebase-{secrets.token_hex(8)}"
 
     new_user = User(
         email=fallback_email,
         phone_number=fallback_phone,
-        hashed_password=hash_password(f"firebase_{firebase_uid}"),
+        hashed_password=hash_password(secrets.token_hex(32)),
         display_name=display_name,
         firebase_uid=firebase_uid,
         phone_verified=True if phone_number is not None else False,
         referral_code=_generate_referral_code(db),
-        accepted_terms_at=datetime.utcnow(),
+        accepted_terms_at=datetime.now(timezone.utc),
     )
     db.add(new_user)
     db.commit()

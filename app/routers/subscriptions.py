@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Form, responses
+from fastapi import APIRouter, Depends, HTTPException, Form, Request, responses
 from sqlalchemy.orm import Session
 import iyzipay
 
@@ -15,6 +15,9 @@ from app.services.subscription_service import get_subscription, grant_premium, i
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
+
+_SUBSCRIPTION_PRICE = "99.00"
+_PRICE_TOLERANCE = 0.01
 
 
 @router.get("/me", response_model=SubscriptionStatus)
@@ -31,6 +34,7 @@ def read_my_subscription(
 
 @router.post("/checkout-session")
 def create_checkout_session(
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Creates a hosted Iyzico checkout form session for subscribing to premium."""
@@ -38,48 +42,50 @@ def create_checkout_session(
     options = {
         'api_key': settings.iyzico_api_key,
         'secret_key': settings.iyzico_secret_key,
-        'base_url': settings.iyzico_base_url
+        'base_url': settings.iyzico_base_url,
     }
 
-    # Format request payload for Iyzico Checkout Form
+    now = datetime.now(timezone.utc)
+    client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "0.0.0.0").split(",")[0].strip()
+    gsm = current_user.phone_number or "+905300000000"
+
     request_data = {
         'locale': 'tr',
-        'conversationId': f'sub_{current_user.id}_{int(datetime.utcnow().timestamp())}',
-        'price': '99.00',
-        'paidPrice': '99.00',
+        'conversationId': f'sub_{current_user.id}_{int(now.timestamp())}',
+        'price': _SUBSCRIPTION_PRICE,
+        'paidPrice': _SUBSCRIPTION_PRICE,
         'currency': 'TRY',
         'basketId': f'basket_{current_user.id}',
         'paymentGroup': 'SUBSCRIPTION',
         'callbackUrl': settings.public_base_url + "/subscriptions/callback",
-        
         'buyer': {
             'id': str(current_user.id),
             'name': current_user.display_name or 'Buddy',
             'surname': 'User',
-            'gsmNumber': '+905300000000',
+            'gsmNumber': gsm,
             'email': current_user.email,
             'identityNumber': '11111111111',
-            'lastLoginDate': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
-            'registrationDate': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
-            'registrationAddress': 'Kadikoy, Istanbul',
-            'ip': '85.100.100.100',
+            'lastLoginDate': now.strftime('%Y-%m-%d %H:%M:%S'),
+            'registrationDate': now.strftime('%Y-%m-%d %H:%M:%S'),
+            'registrationAddress': 'Turkey',
+            'ip': client_ip,
             'city': 'Istanbul',
             'country': 'Turkey',
-            'zipCode': '34700'
+            'zipCode': '34700',
         },
         'shippingAddress': {
             'contactName': current_user.display_name or 'Buddy User',
             'city': 'Istanbul',
             'country': 'Turkey',
-            'address': 'Kadikoy, Istanbul',
-            'zipCode': '34700'
+            'address': 'Turkey',
+            'zipCode': '34700',
         },
         'billingAddress': {
             'contactName': current_user.display_name or 'Buddy User',
             'city': 'Istanbul',
             'country': 'Turkey',
-            'address': 'Kadikoy, Istanbul',
-            'zipCode': '34700'
+            'address': 'Turkey',
+            'zipCode': '34700',
         },
         'basketItems': [
             {
@@ -87,17 +93,14 @@ def create_checkout_session(
                 'name': 'FindYourBuddy Premium 1 Month',
                 'category1': 'Subscriptions',
                 'itemType': 'VIRTUAL',
-                'price': '99.00'
+                'price': _SUBSCRIPTION_PRICE,
             }
-        ]
+        ],
     }
 
     try:
-        # iyzipay's create()/retrieve() return a raw, unread http.client.HTTPResponse --
-        # it must be read and JSON-decoded before any of the payload fields exist.
         raw_response = iyzipay.CheckoutFormInitialize().create(request_data, options)
         response = json.loads(raw_response.read().decode("utf-8"))
-
         if response.get("status") == "success":
             return {"checkout_url": response.get("paymentPageUrl")}
         raise HTTPException(
@@ -119,26 +122,34 @@ async def iyzico_callback(
     options = {
         'api_key': settings.iyzico_api_key,
         'secret_key': settings.iyzico_secret_key,
-        'base_url': settings.iyzico_base_url
+        'base_url': settings.iyzico_base_url,
     }
-    
+
     try:
         raw_response = iyzipay.CheckoutForm().retrieve({'token': token}, options)
         checkout_form = json.loads(raw_response.read().decode("utf-8"))
-        status = checkout_form.get("status")
+        checkout_status = checkout_form.get("status")
         payment_status = checkout_form.get("paymentStatus")
 
-        if status == "success" and payment_status == "SUCCESS":
+        if checkout_status == "success" and payment_status == "SUCCESS":
+            paid_price_raw = str(checkout_form.get("paidPrice") or checkout_form.get("price") or "0")
+            try:
+                paid = float(paid_price_raw)
+            except ValueError:
+                paid = 0.0
+            if paid < float(_SUBSCRIPTION_PRICE) - _PRICE_TOLERANCE:
+                logger.warning("Price mismatch in subscription callback: expected %s, got %s", _SUBSCRIPTION_PRICE, paid_price_raw)
+                return responses.HTMLResponse(
+                    content="<html><body><h1>Ödeme Tutarı Geçersiz</h1></body></html>",
+                    status_code=400,
+                )
+
             conv_id = checkout_form.get("conversationId")
             if conv_id and conv_id.startswith("sub_"):
                 parts = conv_id.split("_")
                 user_id = int(parts[1])
-                # Iyzico (or the user's browser) can call this callback more
-                # than once for the same token -- only grant the extension
-                # the first time, or a retry would stack another 30 days for
-                # free.
                 if claim_payment_callback(db, token, "subscription", user_id):
-                    expires = datetime.utcnow() + timedelta(days=30)
+                    expires = datetime.now(timezone.utc) + timedelta(days=30)
                     grant_premium(db, user_id, expires_at=expires)
 
                 return responses.HTMLResponse(content="""
@@ -158,7 +169,7 @@ async def iyzico_callback(
                         </body>
                     </html>
                 """)
-        
+
         error_msg = checkout_form.get("errorMessage") or "Ödeme tamamlanamadı."
         return responses.HTMLResponse(content=f"""
             <html>
@@ -178,12 +189,12 @@ async def iyzico_callback(
             </html>
         """)
     except Exception as e:
-        logger.error(f"Iyzico callback verification error: {e}")
-        return responses.HTMLResponse(content=f"""
+        logger.error("Iyzico callback verification error: %s", e)
+        return responses.HTMLResponse(content="""
             <html>
                 <body style="font-family: sans-serif; text-align: center; padding-top: 100px; background: #121212; color: #fff;">
                     <h1 style="color: #F44336;">❌ Bir Hata Oluştu</h1>
-                    <p>{str(e)}</p>
+                    <p>Lütfen daha sonra tekrar deneyin.</p>
                 </body>
             </html>
         """)
