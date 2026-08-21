@@ -230,32 +230,31 @@ def list_incoming_likes(db: Session, user_id: int, event_id: int | None = None) 
         query = query.filter(Swipe.event_id == event_id)
         
     swipes = query.all()
-    
+
     # Exclude blocked users and user's own ID
     excluded_ids = {user_id, *blocked_user_ids(db, user_id)}
-    
+
+    # Bulk fetch all targets that current user has ALREADY swiped on
+    already_swiped_pairs = set(
+        (swiper_target_id, swiper_event_id)
+        for swiper_target_id, swiper_event_id in db.query(Swipe.target_id, Swipe.event_id)
+        .filter(Swipe.swiper_id == user_id)
+        .all()
+    )
+
     res = []
-    # Use cache to avoid redundant db queries for swiper details
     user_cache = {}
-    
+
     for swipe in swipes:
         if swipe.swiper_id in excluded_ids:
             continue
-            
-        # Check if target user has already swiped back on this swiper for this event
-        already_swiped = db.query(Swipe).filter(
-            Swipe.swiper_id == user_id,
-            Swipe.target_id == swipe.swiper_id,
-            Swipe.event_id == swipe.event_id
-        ).first()
-        
-        if already_swiped is not None:
+
+        if (swipe.swiper_id, swipe.event_id) in already_swiped_pairs:
             continue
-            
-        # Get swiper user details
+
         if swipe.swiper_id not in user_cache:
             user_cache[swipe.swiper_id] = db.get(User, swipe.swiper_id)
-            
+
         swiper_user = user_cache[swipe.swiper_id]
         if swiper_user and swiper_user.is_active:
             res.append({
