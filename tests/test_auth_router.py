@@ -96,7 +96,7 @@ def test_login_rejects_wrong_password(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_password_reset_request_returns_200_for_known_and_404_for_unknown_email(
+def test_password_reset_request_returns_200_for_any_email(
     client: TestClient,
 ) -> None:
     _register(client)
@@ -104,9 +104,11 @@ def test_password_reset_request_returns_200_for_known_and_404_for_unknown_email(
     known = client.post("/auth/password-reset/request", json={"email": "ada@example.com"})
     unknown = client.post("/auth/password-reset/request", json={"email": "nobody@example.com"})
 
+    # Both return 200 to prevent email enumeration
     assert known.status_code == 200
-    assert known.json()["reset_code"]
-    assert unknown.status_code == 404
+    assert unknown.status_code == 200
+    assert "reset_code" not in known.json()
+    assert "message" in known.json()
 
 
 def test_password_reset_confirm_rejects_invalid_token(client: TestClient) -> None:
