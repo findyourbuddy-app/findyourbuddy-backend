@@ -49,10 +49,13 @@ def _create_event(db_session: Session, creator_id: int) -> int:
             latitude=40.0,
             longitude=-73.0,
             starts_at=datetime.utcnow() + timedelta(days=1),
+            is_group_event=False,
         ),
         creator_id,
     )
     return event.id
+
+
 
 
 def test_record_swipe_raises_when_daily_limit_reached(
