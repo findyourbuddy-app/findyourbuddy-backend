@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.geo import haversine_km
+from app.models.event import Event
 from app.models.event_attendance import EventAttendance
 from app.models.swipe import Swipe, SwipeDirection
 from app.models.user import User
@@ -147,28 +148,43 @@ def list_swipe_candidates(
     if not is_premium(db, swiper_id):
         min_age = max_age = max_distance_km = None
 
+    event = db.get(Event, event_id)
+    is_group_or_system = event is not None and (event.is_group_event or event.creator_id is None)
+
+    if not is_group_or_system and max_distance_km is None:
+        # 1:1 user events skip the attendance filter below, so unlike group/system
+        # events (where attendees self-selected into that event's location), there
+        # is no other geographic scoping. Without this, RecommendationService's
+        # score has no distance component either, so free users would see a
+        # completely unbounded, non-local candidate pool. Premium users can still
+        # override this with their own max_distance_km.
+        max_distance_km = get_settings().match_max_distance_km
+
     already_swiped_target_ids = db.query(Swipe.target_id).filter(
         Swipe.swiper_id == swiper_id, Swipe.event_id == event_id
     )
-    # Only approved attendees are swipeable -- someone with a still-pending
-    # group-event join request hasn't been let in yet and shouldn't show up
-    # as a candidate for other attendees (or vice versa).
-    attending_user_ids = db.query(EventAttendance.user_id).filter(
-        EventAttendance.event_id == event_id, EventAttendance.status == "approved"
-    )
     excluded_ids = {swiper_id, *blocked_user_ids(db, swiper_id)}
+
     query = db.query(User).filter(
-        User.id.in_(attending_user_ids),
         User.id.notin_(already_swiped_target_ids),
         User.id.notin_(excluded_ids),
         User.is_active.is_(True),
     )
+
+    if is_group_or_system:
+        # Group & System Events: require event attendance
+        attending_user_ids = db.query(EventAttendance.user_id).filter(
+            EventAttendance.event_id == event_id, EventAttendance.status == "approved"
+        )
+        query = query.filter(User.id.in_(attending_user_ids))
+
     if min_age is not None:
         query = query.filter(User.age.is_not(None), User.age >= min_age)
     if max_age is not None:
         query = query.filter(User.age.is_not(None), User.age <= max_age)
 
     candidates = query.all()
+
 
     if max_distance_km is not None:
         if swiper.latitude is not None and swiper.longitude is not None:

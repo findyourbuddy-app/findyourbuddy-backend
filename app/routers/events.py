@@ -52,11 +52,14 @@ def list_all_events(
     upcoming_only: bool = True,
     skip: int = 0,
     limit: int = 50,
+    origin: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[EventRead]:
+    if origin not in (None, "system", "user"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="origin must be 'system' or 'user'")
     events = list_events(
-        db, category=category, upcoming_only=upcoming_only, skip=skip, limit=limit
+        db, category=category, upcoming_only=upcoming_only, skip=skip, limit=limit, origin=origin
     )
     event_ids = [e.id for e in events]
     attendee_counts = count_attendees_bulk(db, event_ids)

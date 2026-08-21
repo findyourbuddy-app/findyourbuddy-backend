@@ -83,19 +83,24 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
         }
 
     if not settings.novita_api_key:
-        user.is_verified = True
-        user.verification_status = "verified"
-        db.commit()
-        db.refresh(user)
-        try:
-            from app.core.notifications import get_notification_sender
-            from app.services.notification_service import notify_photo_verification_result
-            notify_photo_verification_result(db, get_notification_sender(), user.id, verified=True)
-        except Exception:
-            pass
+        if settings.environment != "production":
+            user.is_verified = True
+            user.verification_status = "verified"
+            db.commit()
+            db.refresh(user)
+            try:
+                from app.core.notifications import get_notification_sender
+                from app.services.notification_service import notify_photo_verification_result
+                notify_photo_verification_result(db, get_notification_sender(), user.id, verified=True)
+            except Exception:
+                pass
+            return {
+                "verified": True,
+                "message": "[DEV/TEST] Profil fotoğrafınız başarıyla doğrulandı! Mavi Tik 🔵 rozetiniz tanımlandı.",
+            }
         return {
-            "verified": True,
-            "message": "Profil fotoğrafınız başarıyla doğrulandı! Mavi Tik rozetiniz tanımlandı. 🔵",
+            "verified": False,
+            "message": "Doğrulama servisi şu anda kullanılamıyor.",
         }
 
     selfie_payload = _resolve_image_to_data_uri_or_url(
@@ -209,18 +214,15 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
         except Exception as parse_err:
             logger.error(f"Failed to parse LLM vision response: {parse_err}, raw content: {raw_content}")
 
-    # Fallback approve when service completes analysis
-    user.is_verified = True
-    user.verification_status = "verified"
+    # The API key IS configured but the call itself failed or returned
+    # something unparseable -- this must never silently auto-verify, in any
+    # environment. Doing so in dev/test would mask a real bug (a broken
+    # prompt, an expired key, a bad response format) behind a fake "success".
+    # Only the no-key-configured-at-all branch above is allowed to mock-approve.
+    user.verification_status = "pending"
     db.commit()
-    db.refresh(user)
-    try:
-        from app.core.notifications import get_notification_sender
-        from app.services.notification_service import notify_photo_verification_result
-        notify_photo_verification_result(db, get_notification_sender(), user.id, verified=True)
-    except Exception:
-        pass
     return {
-        "verified": True,
-        "message": "Profil fotoğrafınız başarıyla doğrulandı! Mavi Tik 🔵 rozetiniz tanımlandı.",
+        "verified": False,
+        "message": "Doğrulama servisi şu anda yanıt vermiyor. Lütfen daha sonra tekrar deneyin.",
     }
+
