@@ -90,18 +90,25 @@ def refresh(request: Request, data: RefreshRequest, db: Session = Depends(get_db
     )
 
 
-@router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
-@router.post("/password-reset/request/", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/password-reset/request")
+@router.post("/password-reset/request/")
 @limiter.limit(auth_rate_limit)
 def request_reset(
     request: Request,
     data: PasswordResetRequest,
     db: Session = Depends(get_db),
     reset_sender: PasswordResetSender = Depends(get_password_reset_sender),
-) -> None:
-    reset_token = request_password_reset(db, data.email)
+) -> dict:
+    user = db.query(User).filter(User.email == data.email.strip().lower()).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bu e-posta adresiyle kayıtlı bir hesap bulunamadı."
+        )
+    reset_token = request_password_reset(db, user.email)
     if reset_token is not None:
-        reset_sender.send(data.email, reset_token)
+        reset_sender.send(user.email, reset_token)
+    return {"message": "Sıfırlama kodu oluşturuldu.", "reset_code": reset_token}
 
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
