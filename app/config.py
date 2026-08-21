@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -118,6 +118,19 @@ class Settings(BaseSettings):
 
     geocoding_base_url: str = "https://nominatim.openstreetmap.org"
     geocoding_user_agent: str = "findyourbuddy-app/0.1 (contact@findyourbuddy.dev)"
+
+    @model_validator(mode="after")
+    def _check_production_secrets(self) -> "Settings":
+        if self.environment == "production":
+            if "sandbox" in self.iyzico_api_key or "dummy" in self.iyzico_api_key:
+                raise ValueError("iyzico_api_key must be a real production key in production environment")
+            if "sandbox" in self.iyzico_secret_key or "dummy" in self.iyzico_secret_key:
+                raise ValueError("iyzico_secret_key must be a real production key in production environment")
+            if "sandbox" in self.iyzico_base_url:
+                raise ValueError("iyzico_base_url must be the production endpoint in production environment")
+            if not self.public_base_url:
+                raise ValueError("public_base_url must be set in production environment")
+        return self
 
 
 @lru_cache
