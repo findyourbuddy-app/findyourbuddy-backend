@@ -107,6 +107,7 @@ def test_iyzico_callback_completed(client: TestClient, db_session: Session, monk
         {
             "status": "success",
             "paymentStatus": "SUCCESS",
+            "paidPrice": "99.00",
             "conversationId": f"sub_{user_id}_12345678",
         }
     ).encode("utf-8")
