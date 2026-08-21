@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -36,7 +36,7 @@ def _get_feedback(db: Session, match_id: int, rater_id: int) -> MatchFeedback | 
 
 def event_has_finished(db: Session, event_id: int) -> bool:
     event = db.get(Event, event_id)
-    return event is not None and event.starts_at < datetime.utcnow()
+    return event is not None and event.starts_at < datetime.now(timezone.utc)
 
 
 def needs_feedback(db: Session, match: Match, user_id: int) -> bool:
@@ -89,7 +89,7 @@ def send_pending_feedback_notifications(db: Session, sender: NotificationSender)
     finished_matches = (
         db.query(Match)
         .join(Event, Event.id == Match.event_id)
-        .filter(Event.starts_at < datetime.utcnow())
+        .filter(Event.starts_at < datetime.now(timezone.utc))
         .all()
     )
 
@@ -107,7 +107,7 @@ def send_pending_feedback_notifications(db: Session, sender: NotificationSender)
                     rater_id=user_id,
                     rated_id=_other_user_id(match, user_id),
                     met_in_person=None,
-                    notified_at=datetime.utcnow(),
+                    notified_at=datetime.now(timezone.utc),
                 )
             )
             sender.send(user_id, title, body)

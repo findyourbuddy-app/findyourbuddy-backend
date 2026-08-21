@@ -24,4 +24,4 @@ def parse_verification_token(token: str) -> Tuple[int, str] | None:
 
 def is_token_expired(created_at: datetime.datetime, ttl_seconds: int = 3600) -> bool:
     """Check if the token is older than ttl_seconds (default 1 hour)."""
-    return (datetime.datetime.utcnow() - created_at).total_seconds() > ttl_seconds
+    return (datetime.datetime.now(datetime.timezone.utc) - created_at).total_seconds() > ttl_seconds

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -74,7 +74,7 @@ def delete_past_event_bookmarks(db: Session) -> int:
     """Saving an event to "remind me to go" stops making sense once it's
     already happened -- unlike attendance history, there's no reason to
     keep these around, so they're purged outright."""
-    expired_event_ids = db.query(Event.id).filter(Event.starts_at < datetime.utcnow())
+    expired_event_ids = db.query(Event.id).filter(Event.starts_at < datetime.now(timezone.utc))
     deleted_count = (
         db.query(Bookmark)
         .filter(Bookmark.event_id.in_(expired_event_ids))
