@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -42,7 +42,7 @@ def _event_data(**overrides: object) -> EventCreate:
         "location_name": "Central Park",
         "latitude": 40.0,
         "longitude": -73.0,
-        "starts_at": datetime.utcnow() + timedelta(days=1),
+        "starts_at": datetime.now(timezone.utc) + timedelta(days=1),
     }
     defaults.update(overrides)
     return EventCreate(**defaults)
@@ -62,12 +62,12 @@ def test_list_events_excludes_past_events_by_default(db_session: Session) -> Non
     creator_id = _create_user(db_session)
     create_event(
         db_session,
-        _event_data(title="Yesterday", starts_at=datetime.utcnow() - timedelta(days=1)),
+        _event_data(title="Yesterday", starts_at=datetime.now(timezone.utc) - timedelta(days=1)),
         creator_id,
     )
     create_event(
         db_session,
-        _event_data(title="Tomorrow", starts_at=datetime.utcnow() + timedelta(days=1)),
+        _event_data(title="Tomorrow", starts_at=datetime.now(timezone.utc) + timedelta(days=1)),
         creator_id,
     )
 
@@ -81,7 +81,7 @@ def test_list_events_respects_skip_and_limit(db_session: Session) -> None:
     for i in range(5):
         create_event(
             db_session,
-            _event_data(title=f"Event {i}", starts_at=datetime.utcnow() + timedelta(days=i + 1)),
+            _event_data(title=f"Event {i}", starts_at=datetime.now(timezone.utc) + timedelta(days=i + 1)),
             creator_id,
             is_premium=True,
         )
@@ -95,7 +95,7 @@ def test_list_events_can_include_past_events(db_session: Session) -> None:
     creator_id = _create_user(db_session)
     create_event(
         db_session,
-        _event_data(title="Yesterday", starts_at=datetime.utcnow() - timedelta(days=1)),
+        _event_data(title="Yesterday", starts_at=datetime.now(timezone.utc) - timedelta(days=1)),
         creator_id,
     )
 
@@ -108,12 +108,12 @@ def test_delete_expired_events_removes_old_unmatched_events(db_session: Session)
     creator_id = _create_user(db_session)
     old_event = create_event(
         db_session,
-        _event_data(title="Old", starts_at=datetime.utcnow() - timedelta(days=40)),
+        _event_data(title="Old", starts_at=datetime.now(timezone.utc) - timedelta(days=40)),
         creator_id,
     )
     create_event(
         db_session,
-        _event_data(title="Recent", starts_at=datetime.utcnow() - timedelta(days=5)),
+        _event_data(title="Recent", starts_at=datetime.now(timezone.utc) - timedelta(days=5)),
         creator_id,
     )
 
@@ -132,7 +132,7 @@ def test_delete_expired_events_also_removes_related_swipes_and_bookmarks(
     target_id = _create_user(db_session, "target@example.com")
     event = create_event(
         db_session,
-        _event_data(title="Old", starts_at=datetime.utcnow() - timedelta(days=40)),
+        _event_data(title="Old", starts_at=datetime.now(timezone.utc) - timedelta(days=40)),
         creator_id,
     )
     record_swipe(
@@ -152,7 +152,7 @@ def test_delete_expired_events_preserves_events_with_a_match(db_session: Session
     target_id = _create_user(db_session, "target@example.com")
     event = create_event(
         db_session,
-        _event_data(title="Old but matched", starts_at=datetime.utcnow() - timedelta(days=40)),
+        _event_data(title="Old but matched", starts_at=datetime.now(timezone.utc) - timedelta(days=40)),
         creator_id,
     )
     record_swipe(
@@ -217,7 +217,7 @@ def test_check_in_succeeds_near_event_during_window(db_session: Session) -> None
             title="Nearby now",
             latitude=41.0,
             longitude=29.0,
-            starts_at=datetime.utcnow() + timedelta(minutes=5),
+            starts_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         ),
         creator_id,
     )
@@ -236,7 +236,7 @@ def test_check_in_rejects_too_far_from_event(db_session: Session) -> None:
             title="Far away",
             latitude=41.0,
             longitude=29.0,
-            starts_at=datetime.utcnow() + timedelta(minutes=5),
+            starts_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         ),
         creator_id,
     )
@@ -256,7 +256,7 @@ def test_check_in_rejects_outside_time_window(db_session: Session) -> None:
             title="Not yet",
             latitude=41.0,
             longitude=29.0,
-            starts_at=datetime.utcnow() + timedelta(days=3),
+            starts_at=datetime.now(timezone.utc) + timedelta(days=3),
         ),
         creator_id,
     )

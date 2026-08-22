@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -22,39 +22,34 @@ _LIKE_DIRECTIONS = (SwipeDirection.LIKE, SwipeDirection.SUPER_LIKE)
 
 
 def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> bool:
-    count = (
-        db.query(Swipe)
-        .filter(
-            or_(
-                and_(
-                    Swipe.swiper_id == user_a_id,
-                    Swipe.target_id == user_b_id,
-                    Swipe.event_id == event_id,
-                    Swipe.direction.in_(_LIKE_DIRECTIONS),
-                ),
-                and_(
-                    Swipe.swiper_id == user_b_id,
-                    Swipe.target_id == user_a_id,
-                    Swipe.event_id == event_id,
-                    Swipe.direction.in_(_LIKE_DIRECTIONS),
-                ),
-            )
+    a_liked_b = db.query(
+        exists().where(
+            Swipe.swiper_id == user_a_id,
+            Swipe.target_id == user_b_id,
+            Swipe.event_id == event_id,
+            Swipe.direction.in_(_LIKE_DIRECTIONS),
         )
-        .count()
-    )
-    return count == 2
+    ).scalar()
+    if not a_liked_b:
+        return False
+    return db.query(
+        exists().where(
+            Swipe.swiper_id == user_b_id,
+            Swipe.target_id == user_a_id,
+            Swipe.event_id == event_id,
+            Swipe.direction.in_(_LIKE_DIRECTIONS),
+        )
+    ).scalar()
 
 
-def _existing_match(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> Match | None:
-    return (
-        db.query(Match)
-        .filter(
+def _existing_match(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> bool:
+    return db.query(
+        exists().where(
             Match.event_id == event_id,
             Match.user_a_id == user_a_id,
             Match.user_b_id == user_b_id,
         )
-        .first()
-    )
+    ).scalar()
 
 
 def _interest_score(user_a: User, user_b: User) -> float:
@@ -134,7 +129,7 @@ def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int)
         return None
 
     user_a_id, user_b_id = _ordered_pair(swiper_id, target_id)
-    if _existing_match(db, user_a_id, user_b_id, event_id) is not None:
+    if _existing_match(db, user_a_id, user_b_id, event_id):
         return None
 
     user_a = db.get(User, user_a_id)
@@ -177,18 +172,23 @@ def unmatch(db: Session, match_id: int, user_id: int) -> None:
 def list_matches_for_user(
     db: Session, user_id: int, skip: int = 0, limit: int = 50
 ) -> list[Match]:
-    blocked_ids = set(blocked_user_ids(db, user_id))
-    matches = (
+    excluded_ids = set(blocked_user_ids(db, user_id))
+    query = (
         db.query(Match)
         .filter(
             or_(Match.user_a_id == user_id, Match.user_b_id == user_id),
             Match.is_active.is_(True),
         )
         .order_by(Match.created_at.desc())
-        .all()
     )
-    visible = [match for match in matches if _other_user_id(match, user_id) not in blocked_ids]
-    return visible[skip : skip + limit]
+    if excluded_ids:
+        query = query.filter(
+            or_(
+                and_(Match.user_a_id == user_id, Match.user_b_id.notin_(excluded_ids)),
+                and_(Match.user_b_id == user_id, Match.user_a_id.notin_(excluded_ids)),
+            )
+        )
+    return query.offset(skip).limit(limit).all()
 
 
 def list_matches_with_details(

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -28,7 +28,7 @@ def test_run_cleanup_jobs_reports_deleted_counts(db_session: Session) -> None:
             location_name="Central Park",
             latitude=40.0,
             longitude=-73.0,
-            starts_at=datetime.utcnow() - timedelta(days=100),
+            starts_at=datetime.now(timezone.utc) - timedelta(days=100),
         ),
         user.id,
     )

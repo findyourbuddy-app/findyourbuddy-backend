@@ -10,13 +10,13 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_staff_user
 from app.database import get_db
 from app.models.user import User
-
-logger = logging.getLogger(__name__)
 from app.schemas.admin import UserActiveStatusUpdate
 from app.schemas.subscription import GrantPremiumRequest, SubscriptionStatus
 from app.schemas.user import UserRead
 from app.services.admin_service import UserNotFoundError, list_users, set_user_active_status
 from app.services.subscription_service import get_subscription, grant_premium, is_premium, revoke_premium
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

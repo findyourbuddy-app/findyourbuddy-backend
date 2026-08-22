@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -10,7 +10,7 @@ def _event_payload(**overrides: object) -> dict[str, object]:
         "location_name": "Central Park",
         "latitude": 40.0,
         "longitude": -73.0,
-        "starts_at": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+        "starts_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
     }
     payload.update(overrides)
     return payload
@@ -128,7 +128,7 @@ def test_check_in_confirms_attendance_when_nearby(
         json=_event_payload(
             latitude=41.0,
             longitude=29.0,
-            starts_at=(datetime.utcnow() + timedelta(minutes=5)).isoformat(),
+            starts_at=(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
         ),
     )
     event_id = create_response.json()["id"]
@@ -152,7 +152,7 @@ def test_check_in_rejects_when_too_far(
         json=_event_payload(
             latitude=41.0,
             longitude=29.0,
-            starts_at=(datetime.utcnow() + timedelta(minutes=5)).isoformat(),
+            starts_at=(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
         ),
     )
     event_id = create_response.json()["id"]

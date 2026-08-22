@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy.orm import Session
@@ -57,7 +57,7 @@ def _make_match(db_session: Session, starts_at: datetime) -> tuple[int, int, int
 
 
 def test_needs_feedback_false_when_event_upcoming(db_session: Session) -> None:
-    match_id, user_a, _ = _make_match(db_session, datetime.utcnow() + timedelta(days=1))
+    match_id, user_a, _ = _make_match(db_session, datetime.now(timezone.utc) + timedelta(days=1))
     from app.models.match import Match
 
     match = db_session.get(Match, match_id)
@@ -65,7 +65,7 @@ def test_needs_feedback_false_when_event_upcoming(db_session: Session) -> None:
 
 
 def test_needs_feedback_true_when_event_finished_and_unanswered(db_session: Session) -> None:
-    match_id, user_a, _ = _make_match(db_session, datetime.utcnow() - timedelta(hours=1))
+    match_id, user_a, _ = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
     from app.models.match import Match
 
     match = db_session.get(Match, match_id)
@@ -73,14 +73,14 @@ def test_needs_feedback_true_when_event_finished_and_unanswered(db_session: Sess
 
 
 def test_submit_feedback_raises_when_event_not_finished(db_session: Session) -> None:
-    match_id, user_a, _ = _make_match(db_session, datetime.utcnow() + timedelta(days=1))
+    match_id, user_a, _ = _make_match(db_session, datetime.now(timezone.utc) + timedelta(days=1))
 
     with pytest.raises(EventNotFinishedError):
         submit_feedback(db_session, match_id, user_a, True)
 
 
 def test_submit_feedback_raises_for_non_participant(db_session: Session) -> None:
-    match_id, _, _ = _make_match(db_session, datetime.utcnow() - timedelta(hours=1))
+    match_id, _, _ = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
     outsider_id = _register(db_session, "outsider@example.com")
 
     with pytest.raises(NotAMatchParticipantError):
@@ -88,7 +88,7 @@ def test_submit_feedback_raises_for_non_participant(db_session: Session) -> None
 
 
 def test_submit_feedback_true_increments_rated_user_trust_score(db_session: Session) -> None:
-    match_id, user_a, user_b = _make_match(db_session, datetime.utcnow() - timedelta(hours=1))
+    match_id, user_a, user_b = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
 
     submit_feedback(db_session, match_id, user_a, True)
 
@@ -96,7 +96,7 @@ def test_submit_feedback_true_increments_rated_user_trust_score(db_session: Sess
 
 
 def test_submit_feedback_false_does_not_increment_trust_score(db_session: Session) -> None:
-    match_id, user_a, user_b = _make_match(db_session, datetime.utcnow() - timedelta(hours=1))
+    match_id, user_a, user_b = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
 
     submit_feedback(db_session, match_id, user_a, False)
 
@@ -104,7 +104,7 @@ def test_submit_feedback_false_does_not_increment_trust_score(db_session: Sessio
 
 
 def test_submit_feedback_marks_needs_feedback_false(db_session: Session) -> None:
-    match_id, user_a, _ = _make_match(db_session, datetime.utcnow() - timedelta(hours=1))
+    match_id, user_a, _ = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
     from app.models.match import Match
 
     submit_feedback(db_session, match_id, user_a, True)
@@ -114,7 +114,7 @@ def test_submit_feedback_marks_needs_feedback_false(db_session: Session) -> None
 
 
 def test_submit_feedback_twice_does_not_double_count_trust_score(db_session: Session) -> None:
-    match_id, user_a, user_b = _make_match(db_session, datetime.utcnow() - timedelta(hours=1))
+    match_id, user_a, user_b = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
 
     submit_feedback(db_session, match_id, user_a, True)
     submit_feedback(db_session, match_id, user_a, True)
@@ -125,7 +125,7 @@ def test_submit_feedback_twice_does_not_double_count_trust_score(db_session: Ses
 def test_send_pending_feedback_notifications_notifies_both_participants_once(
     db_session: Session,
 ) -> None:
-    match_id, user_a, user_b = _make_match(db_session, datetime.utcnow() - timedelta(hours=1))
+    match_id, user_a, user_b = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
     sender = LoggingNotificationSender()
 
     sent_first = send_pending_feedback_notifications(db_session, sender)
@@ -140,7 +140,7 @@ def test_send_pending_feedback_notifications_notifies_both_participants_once(
 
 
 def test_send_pending_feedback_notifications_skips_unfinished_events(db_session: Session) -> None:
-    _make_match(db_session, datetime.utcnow() + timedelta(days=1))
+    _make_match(db_session, datetime.now(timezone.utc) + timedelta(days=1))
     sender = LoggingNotificationSender()
 
     sent = send_pending_feedback_notifications(db_session, sender)
@@ -152,7 +152,7 @@ def test_notification_clears_in_app_needs_feedback(db_session: Session) -> None:
     """Once the scheduler has notified a user, the in-app chat banner should
     not also show -- the notification is the fallback delivery channel, not
     an additional nag on top of it."""
-    match_id, user_a, _ = _make_match(db_session, datetime.utcnow() - timedelta(hours=1))
+    match_id, user_a, _ = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
     from app.models.match import Match
 
     send_pending_feedback_notifications(db_session, LoggingNotificationSender())

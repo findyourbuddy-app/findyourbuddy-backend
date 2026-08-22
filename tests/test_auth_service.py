@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy.orm import Session
@@ -136,7 +136,7 @@ def test_delete_expired_reset_tokens_removes_used_and_expired_only(db_session: S
     expired = db_session.query(PasswordResetToken).filter(
         PasswordResetToken.token == fresh_token
     ).first()
-    expired.expires_at = datetime.utcnow() - timedelta(minutes=1)
+    expired.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
     db_session.commit()
 
     another_fresh_token = request_password_reset(db_session, "ada@example.com")
