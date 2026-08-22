@@ -1,9 +1,8 @@
 import logging
 
+import firebase_admin.auth
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
-
-logger = logging.getLogger(__name__)
 
 from app.core.deps import get_current_user
 from app.core.password_reset import PasswordResetSender, get_password_reset_sender
@@ -22,6 +21,7 @@ from app.schemas.auth import (
 )
 from app.schemas.user import UserCreate, UserRead
 from app.services.auth_service import (
+    AccountInactiveError,
     EmailAlreadyRegisteredError,
     IncorrectCurrentPasswordError,
     InvalidCredentialsError,
@@ -34,6 +34,8 @@ from app.services.auth_service import (
     request_password_reset,
     reset_password,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -68,6 +70,10 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)) -
     except InvalidCredentialsError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
+        ) from exc
+    except AccountInactiveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Hesabınız askıya alınmıştır."
         ) from exc
     return Token(
         access_token=create_access_token(subject=str(user.id)),
@@ -153,7 +159,6 @@ def firebase_login(
     data: FirebaseLoginRequest,
     db: Session = Depends(get_db),
 ) -> Token:
-    import firebase_admin.auth
     try:
         decoded_token = firebase_admin.auth.verify_id_token(data.id_token)
     except (firebase_admin.auth.InvalidIdTokenError, ValueError) as exc:

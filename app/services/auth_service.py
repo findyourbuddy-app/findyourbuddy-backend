@@ -29,6 +29,10 @@ class InvalidCredentialsError(Exception):
     pass
 
 
+class AccountInactiveError(Exception):
+    pass
+
+
 class InvalidOrExpiredResetTokenError(Exception):
     pass
 
@@ -86,8 +90,10 @@ def register_user(db: Session, data: UserCreate) -> User:
 def authenticate_user(db: Session, email: str, password: str) -> User:
     normalized_email = email.strip().lower()
     user = db.query(User).filter(User.email == normalized_email).first()
-    if user is None or not user.is_active or not verify_password(password, user.hashed_password):
+    if user is None or not verify_password(password, user.hashed_password):
         raise InvalidCredentialsError(normalized_email)
+    if not user.is_active:
+        raise AccountInactiveError(normalized_email)
     return user
 
 
