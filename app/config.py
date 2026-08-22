@@ -120,7 +120,7 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     environment: str = "development"
 
-    event_retention_days: int = 0
+    event_retention_days: float = 0.25
     scheduler_interval_hours: float = 6.0
 
     # Accounts are suspended (is_active=False) once trust_score has stayed

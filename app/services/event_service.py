@@ -242,7 +242,7 @@ def count_attendees_bulk(db: Session, event_ids: list[int]) -> dict[int, int]:
     return {event_id: count for event_id, count in rows}
 
 
-def delete_expired_events(db: Session, retention_days: int) -> int:
+def delete_expired_events(db: Session, retention_days: float) -> int:
     """Permanently deletes events whose starts_at is older than the retention
     window, along with their swipes/bookmarks. Events that produced at least
     one Match are left untouched so existing conversations are never lost."""
