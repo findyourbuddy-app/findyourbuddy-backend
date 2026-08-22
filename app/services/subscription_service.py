@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from app.core.datetime_utils import utcnow
 
 from sqlalchemy.orm import Session
@@ -52,7 +52,6 @@ def grant_premium(
             and expires_at is not None
             and subscription.expires_at > now
         ):
-            from datetime import timedelta
             remaining = subscription.expires_at - now
             expires_at = expires_at + remaining
         else:

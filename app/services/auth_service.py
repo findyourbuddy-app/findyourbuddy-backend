@@ -4,7 +4,7 @@ import string
 from datetime import datetime, timezone
 from app.core.datetime_utils import utcnow
 
-from sqlalchemy import or_
+from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
@@ -40,18 +40,18 @@ class IncorrectCurrentPasswordError(Exception):
 def _generate_referral_code(db: Session) -> str:
     while True:
         code = "".join(secrets.choice(_REFERRAL_CODE_ALPHABET) for _ in range(7))
-        if db.query(User).filter(User.referral_code == code).first() is None:
+        if not db.query(exists().where(User.referral_code == code)).scalar():
             return code
 
 
 def register_user(db: Session, data: UserCreate) -> User:
     normalized_email = data.email.strip().lower()
-    if db.query(User).filter(User.email == normalized_email).first() is not None:
+    if db.query(exists().where(User.email == normalized_email)).scalar():
         raise EmailAlreadyRegisteredError(normalized_email)
-    
+
     phone = data.phone_number.strip() if data.phone_number and data.phone_number.strip() else None
     if phone:
-        if db.query(User).filter(User.phone_number == phone).first() is not None:
+        if db.query(exists().where(User.phone_number == phone)).scalar():
             raise PhoneNumberAlreadyRegisteredError(phone)
     else:
         phone = f"unknown-{secrets.token_hex(6)}"

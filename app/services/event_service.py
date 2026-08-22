@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from app.core.datetime_utils import utcnow
 
-from sqlalchemy import func
+from sqlalchemy import exists, func
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -98,11 +98,9 @@ def list_events(
 
 
 def join_event(db: Session, event_id: int, user_id: int) -> EventAttendance:
-    existing = (
-        db.query(EventAttendance)
-        .filter(EventAttendance.event_id == event_id, EventAttendance.user_id == user_id)
-        .first()
-    )
+    existing = db.query(EventAttendance).filter(
+        EventAttendance.event_id == event_id, EventAttendance.user_id == user_id
+    ).first()
     if existing is not None:
         return existing
     event = db.get(Event, event_id)
@@ -162,34 +160,41 @@ def apply_no_show_penalties(db: Session) -> int:
         )
         .all()
     )
-    penalized = 0
+    if not attendances:
+        return 0
+
+    user_ids = {a.user_id for a in attendances}
+    users_by_id = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
+
+    now = utcnow()
     for attendance in attendances:
-        user = db.get(User, attendance.user_id)
+        user = users_by_id.get(attendance.user_id)
         if user is not None:
             user.trust_score -= NO_SHOW_TRUST_SCORE_PENALTY
-        attendance.no_show_penalized_at = utcnow()
-        penalized += 1
-    if penalized:
-        db.commit()
-    return penalized
+        attendance.no_show_penalized_at = now
+
+    db.commit()
+    return len(attendances)
 
 
 def is_ticket_verified(db: Session, event_id: int, user_id: int) -> bool:
-    attendance = (
-        db.query(EventAttendance)
-        .filter(EventAttendance.event_id == event_id, EventAttendance.user_id == user_id)
-        .first()
-    )
-    return attendance is not None and attendance.ticket_verified_at is not None
+    return db.query(
+        exists().where(
+            EventAttendance.event_id == event_id,
+            EventAttendance.user_id == user_id,
+            EventAttendance.ticket_verified_at.is_not(None),
+        )
+    ).scalar()
 
 
 def is_checked_in(db: Session, event_id: int, user_id: int) -> bool:
-    attendance = (
-        db.query(EventAttendance)
-        .filter(EventAttendance.event_id == event_id, EventAttendance.user_id == user_id)
-        .first()
-    )
-    return attendance is not None and attendance.checked_in_at is not None
+    return db.query(
+        exists().where(
+            EventAttendance.event_id == event_id,
+            EventAttendance.user_id == user_id,
+            EventAttendance.checked_in_at.is_not(None),
+        )
+    ).scalar()
 
 
 def list_attending_events(db: Session, user_id: int, upcoming_only: bool = True) -> list[Event]:
@@ -204,16 +209,13 @@ def list_attending_events(db: Session, user_id: int, upcoming_only: bool = True)
 
 
 def is_attending(db: Session, event_id: int, user_id: int) -> bool:
-    return (
-        db.query(EventAttendance)
-        .filter(
+    return db.query(
+        exists().where(
             EventAttendance.event_id == event_id,
             EventAttendance.user_id == user_id,
             EventAttendance.status == "approved",
         )
-        .first()
-        is not None
-    )
+    ).scalar()
 
 
 def count_attendees(db: Session, event_id: int) -> int:
@@ -257,14 +259,15 @@ def delete_expired_events(db: Session, retention_days: int) -> int:
         .filter(Event.starts_at < cutoff, Event.id.notin_(matched_event_ids))
         .all()
     )
+    if not expired_events:
+        return 0
 
-    deleted_count = 0
+    expired_ids = [event.id for event in expired_events]
+    db.query(Swipe).filter(Swipe.event_id.in_(expired_ids)).delete(synchronize_session=False)
+    db.query(Bookmark).filter(Bookmark.event_id.in_(expired_ids)).delete(synchronize_session=False)
+    db.query(EventAttendance).filter(EventAttendance.event_id.in_(expired_ids)).delete(synchronize_session=False)
     for event in expired_events:
-        db.query(Swipe).filter(Swipe.event_id == event.id).delete()
-        db.query(Bookmark).filter(Bookmark.event_id == event.id).delete()
-        db.query(EventAttendance).filter(EventAttendance.event_id == event.id).delete()
         db.delete(event)
-        deleted_count += 1
 
     db.commit()
-    return deleted_count
+    return len(expired_events)

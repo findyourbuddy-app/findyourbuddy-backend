@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from app.core.datetime_utils import utcnow
 
+from sqlalchemy import exists
 from sqlalchemy.orm import Session
 
 from app.models.bookmark import Bookmark
@@ -23,12 +24,7 @@ def create_bookmark(db: Session, user_id: int, event_id: int) -> Bookmark:
     if db.get(Event, event_id) is None:
         raise EventNotFoundError(event_id)
 
-    existing = (
-        db.query(Bookmark)
-        .filter(Bookmark.user_id == user_id, Bookmark.event_id == event_id)
-        .first()
-    )
-    if existing is not None:
+    if db.query(exists().where(Bookmark.user_id == user_id, Bookmark.event_id == event_id)).scalar():
         raise AlreadyBookmarkedError(event_id)
 
     bookmark = Bookmark(user_id=user_id, event_id=event_id)

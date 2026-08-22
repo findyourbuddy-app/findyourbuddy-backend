@@ -1,3 +1,4 @@
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.models.match import Match
@@ -81,16 +82,14 @@ def list_messages(
 
 def mark_messages_as_read(db: Session, match_id: int, reader_id: int) -> int:
     _get_match_for_participant(db, match_id, reader_id)
-    unread_messages = (
-        db.query(Message)
-        .filter(
+    result = db.execute(
+        update(Message)
+        .where(
             Message.match_id == match_id,
             Message.sender_id != reader_id,
             Message.is_read.is_(False),
         )
-        .all()
+        .values(is_read=True)
     )
-    for message in unread_messages:
-        message.is_read = True
     db.commit()
-    return len(unread_messages)
+    return result.rowcount
