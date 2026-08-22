@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy.orm import Session
@@ -48,7 +48,7 @@ def _create_event(db_session: Session, creator_id: int) -> int:
             location_name="Central Park",
             latitude=40.0,
             longitude=-73.0,
-            starts_at=datetime.utcnow() + timedelta(days=1),
+            starts_at=datetime.now(timezone.utc) + timedelta(days=1),
             is_group_event=False,
         ),
         creator_id,

@@ -79,12 +79,14 @@ def blocked_user_ids(db: Session, user_id: int) -> list[int]:
     return [row[0] for row in blocked_by_me.union(blocked_me).all()]
 
 
-def list_my_blocks(db: Session, user_id: int) -> list[tuple[Block, User]]:
+def list_my_blocks(db: Session, user_id: int, skip: int = 0, limit: int = 50) -> list[tuple[Block, User]]:
     """Blocks the given user created themselves (not blocks placed on them by others)."""
     blocks = (
         db.query(Block)
         .filter(Block.blocker_id == user_id)
         .order_by(Block.created_at.desc())
+        .offset(skip)
+        .limit(limit)
         .all()
     )
     if not blocks:

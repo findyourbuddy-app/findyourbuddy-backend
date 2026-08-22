@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_staff_user, get_current_user
@@ -61,6 +61,8 @@ def unblock(
 
 @router.get("/users/me/blocks", response_model=list[BlockedUserRead])
 def list_my_blocked_users(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[BlockedUserRead]:
@@ -68,7 +70,7 @@ def list_my_blocked_users(
         BlockedUserRead(
             id=block.id, blocked_user=UserPublic.model_validate(user), created_at=block.created_at
         )
-        for block, user in list_my_blocks(db, current_user.id)
+        for block, user in list_my_blocks(db, current_user.id, skip=skip, limit=limit)
     ]
 
 

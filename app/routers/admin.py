@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_staff_user
 from app.database import get_db
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 from app.schemas.admin import UserActiveStatusUpdate
 from app.schemas.subscription import GrantPremiumRequest, SubscriptionStatus
 from app.schemas.user import UserRead
@@ -31,7 +35,10 @@ def update_user_active_status(
     db: Session = Depends(get_db),
 ) -> User:
     try:
-        return set_user_active_status(db, user_id, data.is_active)
+        result = set_user_active_status(db, user_id, data.is_active)
+        action = "activated" if data.is_active else "suspended"
+        logger.info("admin_action action=%s target_user_id=%s actor_id=%s", action, user_id, _staff_user.id)
+        return result
     except UserNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found") from exc
 
@@ -44,6 +51,7 @@ def grant_user_premium(
     db: Session = Depends(get_db),
 ) -> SubscriptionStatus:
     grant_premium(db, user_id, expires_at=data.expires_at)
+    logger.info("admin_action action=grant_premium target_user_id=%s expires_at=%s actor_id=%s", user_id, data.expires_at, _staff_user.id)
     return SubscriptionStatus(is_premium=is_premium(db, user_id), expires_at=data.expires_at)
 
 
@@ -54,6 +62,7 @@ def revoke_user_premium(
     db: Session = Depends(get_db),
 ) -> SubscriptionStatus:
     revoke_premium(db, user_id)
+    logger.info("admin_action action=revoke_premium target_user_id=%s actor_id=%s", user_id, _staff_user.id)
     subscription = get_subscription(db, user_id)
     return SubscriptionStatus(
         is_premium=is_premium(db, user_id),
