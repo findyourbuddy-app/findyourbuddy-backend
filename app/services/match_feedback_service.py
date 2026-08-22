@@ -93,22 +93,32 @@ def send_pending_feedback_notifications(db: Session, sender: NotificationSender)
         .filter(Event.starts_at < utcnow())
         .all()
     )
+    if not finished_matches:
+        return 0
+
+    match_ids = [m.id for m in finished_matches]
+    existing_feedback_pairs = {
+        (fb.match_id, fb.rater_id)
+        for fb in db.query(MatchFeedback.match_id, MatchFeedback.rater_id)
+        .filter(MatchFeedback.match_id.in_(match_ids))
+        .all()
+    }
 
     title = "Etkinlik nasıldı?"
+    body = "Kankanla buluştun mu? Sohbet ekranından hızlıca belirtebilirsin."
+    now = utcnow()
     sent = 0
     for match in finished_matches:
         for user_id in (match.user_a_id, match.user_b_id):
-            feedback = _get_feedback(db, match.id, user_id)
-            if feedback is not None:
+            if (match.id, user_id) in existing_feedback_pairs:
                 continue
-            body = "Kankanla buluştun mu? Sohbet ekranından hızlıca belirtebilirsin."
             db.add(
                 MatchFeedback(
                     match_id=match.id,
                     rater_id=user_id,
                     rated_id=_other_user_id(match, user_id),
                     met_in_person=None,
-                    notified_at=utcnow(),
+                    notified_at=now,
                 )
             )
             sender.send(user_id, title, body)

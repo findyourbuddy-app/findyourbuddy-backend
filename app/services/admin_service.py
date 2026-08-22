@@ -17,6 +17,8 @@ def set_user_active_status(db: Session, user_id: int, is_active: bool) -> User:
         raise UserNotFoundError(user_id)
 
     user.is_active = is_active
+    if not is_active:
+        user.token_version += 1
     db.commit()
     db.refresh(user)
     return user

@@ -1,6 +1,8 @@
 import json
 import logging
 import re
+from collections import OrderedDict
+
 import httpx
 
 try:
@@ -9,7 +11,10 @@ except ImportError:
     OpenAI = None
 
 from app.config import get_settings
+from app.core.sanitizer import sanitize_prompt_input, validate_content_safety
 from app.models.user import User
+
+_ICEBREAKER_CACHE_MAX_SIZE = 500
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +47,6 @@ def generate_llm_kanka_synergy(user1: User, user2: User) -> dict:
             ],
             "shared_hobbies": shared_hobbies,
         }
-
-    from app.core.sanitizer import sanitize_prompt_input
 
     safe_bio1 = sanitize_prompt_input(user1.bio, max_length=300)
     safe_bio2 = sanitize_prompt_input(user2.bio, max_length=300)
@@ -122,8 +125,6 @@ def generate_llm_kanka_synergy(user1: User, user2: User) -> dict:
             # output would be displayed as trusted "AI" text on another
             # user's screen -- reject it rather than risk showing whatever
             # it wrote.
-            from app.core.sanitizer import validate_content_safety
-
             output_text = " ".join(
                 str(parsed.get(key, "")) for key in ("synergy_title", "summary")
             ) + " " + " ".join(str(h) for h in parsed.get("highlights", []))
@@ -150,7 +151,7 @@ def generate_llm_kanka_synergy(user1: User, user2: User) -> dict:
     }
 
 
-_ICEBREAKER_CACHE: dict[tuple[int, int], list[dict]] = {}
+_ICEBREAKER_CACHE: OrderedDict[tuple[int, int], list[dict]] = OrderedDict()
 
 
 def generate_llm_icebreakers(user1: User, user2: User) -> list[dict]:
@@ -173,8 +174,6 @@ def generate_llm_icebreakers(user1: User, user2: User) -> list[dict]:
 
     if not settings.novita_api_key:
         return fallback_icebreakers
-
-    from app.core.sanitizer import sanitize_prompt_input
 
     safe_name1 = sanitize_prompt_input(user1.display_name, max_length=50)
     safe_name2 = sanitize_prompt_input(user2.display_name, max_length=50)
@@ -242,11 +241,15 @@ def generate_llm_icebreakers(user1: User, user2: User) -> list[dict]:
             items = parsed.get("icebreakers", [])
             if isinstance(items, list) and len(items) > 0:
                 _ICEBREAKER_CACHE[cache_key] = items
+                if len(_ICEBREAKER_CACHE) > _ICEBREAKER_CACHE_MAX_SIZE:
+                    _ICEBREAKER_CACHE.popitem(last=False)
                 return items
         except Exception as parse_err:
             logger.error(f"Failed to parse LLM icebreaker response: {parse_err}")
 
     _ICEBREAKER_CACHE[cache_key] = fallback_icebreakers
+    if len(_ICEBREAKER_CACHE) > _ICEBREAKER_CACHE_MAX_SIZE:
+        _ICEBREAKER_CACHE.popitem(last=False)
     return fallback_icebreakers
 
 
