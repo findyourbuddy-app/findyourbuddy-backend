@@ -16,7 +16,6 @@ from app.services.subscription_service import get_subscription, grant_premium, i
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
-_SUBSCRIPTION_PRICE = "99.00"
 _PRICE_TOLERANCE = 0.01
 
 
@@ -48,12 +47,13 @@ def create_checkout_session(
     now = datetime.now(timezone.utc)
     client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "0.0.0.0").split(",")[0].strip()
     gsm = current_user.phone_number or "+905300000000"
+    price = settings.subscription_price_try
 
     request_data = {
         'locale': 'tr',
         'conversationId': f'sub_{current_user.id}_{int(now.timestamp())}',
-        'price': _SUBSCRIPTION_PRICE,
-        'paidPrice': _SUBSCRIPTION_PRICE,
+        'price': price,
+        'paidPrice': price,
         'currency': 'TRY',
         'basketId': f'basket_{current_user.id}',
         'paymentGroup': 'SUBSCRIPTION',
@@ -64,7 +64,7 @@ def create_checkout_session(
             'surname': 'User',
             'gsmNumber': gsm,
             'email': current_user.email,
-            'identityNumber': '11111111111',
+            'identityNumber': settings.iyzico_buyer_identity_number,
             'lastLoginDate': now.strftime('%Y-%m-%d %H:%M:%S'),
             'registrationDate': now.strftime('%Y-%m-%d %H:%M:%S'),
             'registrationAddress': 'Turkey',
@@ -93,7 +93,7 @@ def create_checkout_session(
                 'name': 'FindYourBuddy Premium 1 Month',
                 'category1': 'Subscriptions',
                 'itemType': 'VIRTUAL',
-                'price': _SUBSCRIPTION_PRICE,
+                'price': price,
             }
         ],
     }
@@ -124,6 +124,7 @@ async def iyzico_callback(
         'secret_key': settings.iyzico_secret_key,
         'base_url': settings.iyzico_base_url,
     }
+    expected_price = settings.subscription_price_try
 
     try:
         raw_response = iyzipay.CheckoutForm().retrieve({'token': token}, options)
@@ -137,8 +138,8 @@ async def iyzico_callback(
                 paid = float(paid_price_raw)
             except ValueError:
                 paid = 0.0
-            if paid < float(_SUBSCRIPTION_PRICE) - _PRICE_TOLERANCE:
-                logger.warning("Price mismatch in subscription callback: expected %s, got %s", _SUBSCRIPTION_PRICE, paid_price_raw)
+            if paid < float(expected_price) - _PRICE_TOLERANCE:
+                logger.warning("Price mismatch in subscription callback: expected %s, got %s", expected_price, paid_price_raw)
                 return responses.HTMLResponse(
                     content="<html><body><h1>Ödeme Tutarı Geçersiz</h1></body></html>",
                     status_code=400,
