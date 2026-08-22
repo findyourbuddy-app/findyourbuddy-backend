@@ -21,6 +21,7 @@ from app.services.message_service import (
     mark_messages_as_read,
     send_message,
 )
+from app.services.llm_matching_service import generate_llm_icebreakers
 from app.services.notification_service import notify_new_message
 
 router = APIRouter(prefix="/matches/{match_id}/messages", tags=["messages"])
@@ -153,6 +154,5 @@ def get_icebreakers(
     if not other_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
 
-    from app.services.llm_matching_service import generate_llm_icebreakers
     return generate_llm_icebreakers(current_user, other_user)
 

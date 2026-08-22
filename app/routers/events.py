@@ -1,10 +1,12 @@
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from html import escape
 from app.core.datetime_utils import utcnow
 
 import iyzipay
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, responses, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -12,6 +14,8 @@ from app.core.deps import get_current_user
 from app.core.rate_limit import event_writes_rate_limit, limiter
 from app.database import get_db
 from app.models.event import Event
+from app.models.event_attendance import EventAttendance
+from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.event import EventCheckIn, EventCreate, EventCreationQuota, EventPublicSummary, EventRead
 from app.schemas.user import UserRead, UserPublic
@@ -67,7 +71,6 @@ def list_all_events(
     creator_ids = {e.creator_id for e in events if e.creator_id}
     creators = {u.id: u for u in db.query(User).filter(User.id.in_(creator_ids)).all()} if creator_ids else {}
 
-    from app.models.event_attendance import EventAttendance
     user_attendances = (
         {
             att.event_id: att
@@ -117,7 +120,6 @@ def read_my_attending_events(
     creator_ids = {e.creator_id for e in events if e.creator_id}
     creators = {u.id: u for u in db.query(User).filter(User.id.in_(creator_ids)).all()} if creator_ids else {}
 
-    from app.models.event_attendance import EventAttendance
     user_attendances = (
         {
             att.event_id: att
@@ -308,7 +310,7 @@ async def event_credits_callback(
                     </html>
                 """)
 
-        error_msg = checkout_form.get("errorMessage") or "Ödeme tamamlanamadı."
+        error_msg = escape(checkout_form.get("errorMessage") or "Ödeme tamamlanamadı.")
         return responses.HTMLResponse(content=f"""
             <html>
                 <head>
@@ -332,7 +334,7 @@ async def event_credits_callback(
             <html>
                 <body style="font-family: sans-serif; text-align: center; padding-top: 100px; background: #121212; color: #fff;">
                     <h1 style="color: #F44336;">❌ Bir Hata Oluştu</h1>
-                    <p>{str(exc)}</p>
+                    <p>{escape(str(exc))}</p>
                 </body>
             </html>
         """)
@@ -368,8 +370,7 @@ def create_new_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Event:
-    from datetime import timedelta as _timedelta
-    cutoff = utcnow() - _timedelta(minutes=5)
+    cutoff = utcnow() - timedelta(minutes=5)
     starts_at_naive = data.starts_at.replace(tzinfo=None) if data.starts_at.tzinfo else data.starts_at
     if starts_at_naive < cutoff:
         raise HTTPException(
@@ -387,7 +388,6 @@ def create_new_event(
         ) from exc
 
 
-from pydantic import BaseModel
 class JoinRequestAction(BaseModel):
     approved: bool
 
@@ -406,7 +406,6 @@ def attend_event(
     attendance = join_event(db, event_id, current_user.id)
     
     if event.is_group_event and event.creator_id:
-        from app.models.notification import Notification
         db.add(Notification(
             user_id=event.creator_id,
             title="Yeni Katılım İsteği!",
@@ -467,7 +466,6 @@ def get_join_requests(
     if event.creator_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only creator can see join requests")
     
-    from app.models.event_attendance import EventAttendance
     requests = (
         db.query(User)
         .join(EventAttendance, EventAttendance.user_id == User.id)
@@ -491,7 +489,6 @@ def handle_join_request(
     if event.creator_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only creator can manage join requests")
     
-    from app.models.event_attendance import EventAttendance
     attendance = (
         db.query(EventAttendance)
         .filter(EventAttendance.event_id == event_id, EventAttendance.user_id == user_id)
@@ -499,10 +496,9 @@ def handle_join_request(
     )
     if attendance is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attendance request not found")
-    
+
     attendance.status = "approved" if data.approved else "rejected"
-    
-    from app.models.notification import Notification
+
     status_label = "onaylandı 🎉" if data.approved else "reddedildi"
     db.add(Notification(
         user_id=user_id,
@@ -529,7 +525,6 @@ def get_event_attendees(
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     
-    from app.models.event_attendance import EventAttendance
     attendees = (
         db.query(User)
         .join(EventAttendance, EventAttendance.user_id == User.id)
