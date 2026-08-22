@@ -150,11 +150,18 @@ def firebase_login(
     import firebase_admin.auth
     try:
         decoded_token = firebase_admin.auth.verify_id_token(data.id_token)
-    except Exception as exc:
-        logger.warning("Firebase token verification failed: %s", exc)
+    except (firebase_admin.auth.InvalidIdTokenError, ValueError) as exc:
+        # ValueError covers older SDK versions where InvalidIdTokenError is a ValueError subclass
+        logger.warning("Firebase token verification failed (invalid token): %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Geçersiz veya süresi dolmuş kimlik doğrulama jetonu.",
+        ) from exc
+    except Exception as exc:
+        logger.error("Firebase token verification error (configuration/network): %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Kimlik doğrulama servisi şu an kullanılamıyor. Lütfen tekrar deneyin.",
         ) from exc
 
     user = authenticate_or_create_firebase_user(db, decoded_token)

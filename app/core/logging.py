@@ -1,5 +1,6 @@
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 
 from app.config import get_settings
 
@@ -22,8 +23,10 @@ def configure_logging() -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
     
-    # Enable file logging for administrative log viewer
-    file_handler = logging.FileHandler("app.log", encoding="utf-8")
+    # Enable file logging for administrative log viewer (10 MB per file, keep 5 backups)
+    file_handler = RotatingFileHandler(
+        "app.log", maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
     file_handler.setFormatter(JsonFormatter())
     
     logging.basicConfig(level=settings.log_level, handlers=[handler, file_handler], force=True)

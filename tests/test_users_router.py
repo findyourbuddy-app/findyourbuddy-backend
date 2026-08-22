@@ -1,5 +1,6 @@
 import io
 import json
+from datetime import datetime, timedelta, timezone
 
 import iyzipay
 from fastapi.testclient import TestClient
@@ -263,7 +264,7 @@ def test_export_current_user_data_includes_own_records(
             "location_name": "Central Park",
             "latitude": 40.0,
             "longitude": -73.0,
-            "starts_at": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+            "starts_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
         },
     )
 

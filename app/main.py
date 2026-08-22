@@ -80,7 +80,7 @@ cors_allowed_origins = [
 cors_origin_regex = (
     r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.0\.\d+\.\d+)(:\d+)?"
     if not _is_production
-    else r"https://.*\.findyourbuddy\.dev|https://findyourbuddy\.dev"
+    else r"https://([\w-]+\.)?findyourbuddy\.dev"
 )
 
 app.add_middleware(

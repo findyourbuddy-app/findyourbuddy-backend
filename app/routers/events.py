@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from app.core.datetime_utils import utcnow
 
 import iyzipay
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, responses, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, responses, status
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -51,8 +51,8 @@ router = APIRouter(prefix="/events", tags=["events"])
 def list_all_events(
     category: str | None = None,
     upcoming_only: bool = True,
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
     origin: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -211,7 +211,7 @@ def create_credits_checkout_session(
             "surname": "User",
             "gsmNumber": gsm,
             "email": current_user.email,
-            "identityNumber": "11111111111",
+            "identityNumber": settings.iyzico_buyer_identity_number,
             "lastLoginDate": now.strftime("%Y-%m-%d %H:%M:%S"),
             "registrationDate": now.strftime("%Y-%m-%d %H:%M:%S"),
             "registrationAddress": "Turkey",
@@ -368,6 +368,14 @@ def create_new_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Event:
+    from datetime import timedelta as _timedelta
+    cutoff = utcnow() - _timedelta(minutes=5)
+    starts_at_naive = data.starts_at.replace(tzinfo=None) if data.starts_at.tzinfo else data.starts_at
+    if starts_at_naive < cutoff:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Etkinlik başlangıç zamanı geçmişte olamaz.",
+        )
     try:
         return create_event(
             db, data, creator_id=current_user.id, is_premium=is_premium(db, current_user.id)
@@ -515,6 +523,7 @@ def handle_join_request(
 def get_event_attendees(
     event_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[User]:
     event = db.get(Event, event_id)
     if event is None:

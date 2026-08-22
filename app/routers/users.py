@@ -36,6 +36,8 @@ from app.services.user_service import delete_account, update_profile
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["users"])
 
+_PRICE_TOLERANCE = 0.01
+
 PURCHASE_ITEM_NAMES = {
     "boost": "1 Adet Spotlight (Boost)",
     "super_likes": "5 Adet Süper Beğeni",
@@ -413,7 +415,7 @@ def create_purchase_checkout_session(
             "surname": "User",
             "gsmNumber": gsm,
             "email": current_user.email,
-            "identityNumber": "11111111111",
+            "identityNumber": settings.iyzico_buyer_identity_number,
             "lastLoginDate": now.strftime("%Y-%m-%d %H:%M:%S"),
             "registrationDate": now.strftime("%Y-%m-%d %H:%M:%S"),
             "registrationAddress": "Turkey",
@@ -490,7 +492,7 @@ async def purchase_callback(
                 unit_price = PURCHASE_ITEM_PRICES_TRY.get(item_type)
                 expected_price = float(unit_price) * int(quantity) if unit_price else None
                 paid_price = str(checkout_form.get("paidPrice") or checkout_form.get("price") or "")
-                if expected_price and paid_price and float(paid_price) < expected_price:
+                if expected_price and paid_price and float(paid_price) < expected_price - _PRICE_TOLERANCE:
                     logger.warning(f"Price mismatch in store purchase callback: expected {expected_price}, got {paid_price}")
                     return responses.HTMLResponse(content="<html><body><h1>Ödeme Tutarı Geçersiz</h1></body></html>", status_code=400)
 

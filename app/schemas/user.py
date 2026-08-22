@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from app.schemas import SafeEmail
 
 from app.schemas.user_photo import UserPhotoRead
@@ -115,6 +115,31 @@ class UserUpdate(BaseModel):
         if value is not None and len(value) > 4:
             raise ValueError("En fazla 4 hobi seçebilirsiniz.")
         return value
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def _validate_minimum_age(cls, value: date | None) -> date | None:
+        if value is None:
+            return value
+        today = date.today()
+        age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
+        if age < 18:
+            raise ValueError("Uygulamayı kullanmak için 18 yaşında veya daha büyük olmalısınız.")
+        return value
+
+    @field_validator("latitude")
+    @classmethod
+    def _validate_latitude(cls, v: float | None) -> float | None:
+        if v is not None and not (-90.0 <= v <= 90.0):
+            raise ValueError("Enlem -90 ile 90 arasında olmalıdır.")
+        return v
+
+    @field_validator("longitude")
+    @classmethod
+    def _validate_longitude(cls, v: float | None) -> float | None:
+        if v is not None and not (-180.0 <= v <= 180.0):
+            raise ValueError("Boylam -180 ile 180 arasında olmalıdır.")
+        return v
 
     @field_validator("display_name", "occupation", "university", "about_me_prompt", "bio")
     @classmethod
