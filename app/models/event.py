@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -31,4 +31,4 @@ class Event(Base):
     ticket_price: Mapped[float | None] = mapped_column(default=None)
     is_approved: Mapped[bool] = mapped_column(default=True, server_default="true")
     approval_rejection_reason: Mapped[str | None] = mapped_column(Text, default=None)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))

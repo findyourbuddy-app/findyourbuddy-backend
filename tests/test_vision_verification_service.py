@@ -29,6 +29,10 @@ def test_verify_user_photo_without_api_key_in_production_fails(db_session, monke
     get_settings.cache_clear()
     monkeypatch.setenv("NOVITA_API_KEY", "")
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("IYZICO_API_KEY", "prod-real-api-key")
+    monkeypatch.setenv("IYZICO_SECRET_KEY", "prod-real-secret-key")
+    monkeypatch.setenv("IYZICO_BASE_URL", "api.iyzipay.com")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://findyourbuddy.dev")
 
     user = register_user(
         db_session,

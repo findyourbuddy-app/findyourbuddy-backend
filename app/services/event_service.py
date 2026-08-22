@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from app.core.datetime_utils import utcnow
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -32,7 +33,7 @@ class EventCheckInOutsideWindowError(Exception):
 
 
 def count_events_created_this_week(db: Session, creator_id: int) -> int:
-    week_start = datetime.now(timezone.utc) - timedelta(days=7)
+    week_start = utcnow() - timedelta(days=7)
     return (
         db.query(Event)
         .filter(Event.creator_id == creator_id, Event.created_at >= week_start)
@@ -85,7 +86,7 @@ def list_events(
     if category is not None:
         query = query.filter(Event.category == category)
     if upcoming_only:
-        query = query.filter(Event.starts_at >= datetime.now(timezone.utc))
+        query = query.filter(Event.starts_at >= utcnow())
     # Filtering "user" origin client-side over a date-sorted page would only
     # ever see user events once enough system events (there can be
     # thousands) have scrolled past chronologically -- do it in the query.
@@ -123,7 +124,7 @@ def check_in_to_event(
     if event is None:
         raise ValueError(f"Event {event_id} not found")
 
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     window_start = event.starts_at - timedelta(hours=1)
     window_end = event.starts_at + timedelta(hours=CHECK_IN_WINDOW_AFTER_HOURS)
     if not (window_start <= now <= window_end):
@@ -149,7 +150,7 @@ def apply_no_show_penalties(db: Session) -> int:
     once the event's check-in window has closed. Runs from the scheduler --
     a no-show can only be judged after the event is already over, so this
     can't happen at request time like the check-in bonus does."""
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=CHECK_IN_WINDOW_AFTER_HOURS)
+    cutoff = utcnow() - timedelta(hours=CHECK_IN_WINDOW_AFTER_HOURS)
     attendances = (
         db.query(EventAttendance)
         .join(Event, Event.id == EventAttendance.event_id)
@@ -166,7 +167,7 @@ def apply_no_show_penalties(db: Session) -> int:
         user = db.get(User, attendance.user_id)
         if user is not None:
             user.trust_score -= NO_SHOW_TRUST_SCORE_PENALTY
-        attendance.no_show_penalized_at = datetime.now(timezone.utc)
+        attendance.no_show_penalized_at = utcnow()
         penalized += 1
     if penalized:
         db.commit()
@@ -198,7 +199,7 @@ def list_attending_events(db: Session, user_id: int, upcoming_only: bool = True)
         .filter(EventAttendance.user_id == user_id, EventAttendance.status == "approved")
     )
     if upcoming_only:
-        query = query.filter(Event.starts_at >= datetime.now(timezone.utc))
+        query = query.filter(Event.starts_at >= utcnow())
     return query.order_by(Event.starts_at).all()
 
 
@@ -245,7 +246,7 @@ def delete_expired_events(db: Session, retention_days: int) -> int:
     """Permanently deletes events whose starts_at is older than the retention
     window, along with their swipes/bookmarks. Events that produced at least
     one Match are left untouched so existing conversations are never lost."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    cutoff = utcnow() - timedelta(days=retention_days)
     matched_event_ids = (
         db.query(Match.event_id)
         .filter(Match.event_id.isnot(None))

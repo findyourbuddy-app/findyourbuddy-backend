@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from app.core.datetime_utils import utcnow
 import json
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Form, Request, responses
@@ -44,7 +45,7 @@ def create_checkout_session(
         'base_url': settings.iyzico_base_url,
     }
 
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "0.0.0.0").split(",")[0].strip()
     gsm = current_user.phone_number or "+905300000000"
     price = settings.subscription_price_try
@@ -150,7 +151,7 @@ async def iyzico_callback(
                 parts = conv_id.split("_")
                 user_id = int(parts[1])
                 if claim_payment_callback(db, token, "subscription", user_id):
-                    expires = datetime.now(timezone.utc) + timedelta(days=30)
+                    expires = utcnow() + timedelta(days=30)
                     grant_premium(db, user_id, expires_at=expires)
 
                 return responses.HTMLResponse(content="""

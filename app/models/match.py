@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -16,7 +16,7 @@ class Match(Base):
     user_a_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     user_b_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     score: Mapped[float] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")
 
     event: Mapped[Event] = relationship("Event")

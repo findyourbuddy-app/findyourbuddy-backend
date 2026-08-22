@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, ForeignKey, String, Text, Boolean
@@ -19,7 +19,7 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(default=True)
     is_staff: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
     accepted_terms_at: Mapped[datetime | None] = mapped_column(default=None)
 
     age: Mapped[int | None] = mapped_column(default=None)

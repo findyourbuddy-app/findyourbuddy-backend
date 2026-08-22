@@ -2,6 +2,7 @@ import logging
 import secrets
 import string
 from datetime import datetime, timezone
+from app.core.datetime_utils import utcnow
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -65,7 +66,7 @@ def register_user(db: Session, data: UserCreate) -> User:
         email=normalized_email,
         hashed_password=hash_password(data.password),
         display_name=data.display_name,
-        accepted_terms_at=datetime.now(timezone.utc),
+        accepted_terms_at=utcnow(),
         referral_code=_generate_referral_code(db),
         referred_by_id=inviter.id if inviter is not None else None,
         bonus_swipe_credits=REFERRAL_BONUS_SWIPES if inviter is not None else 0,
@@ -108,13 +109,13 @@ def reset_password(db: Session, token: str, new_password: str) -> None:
     if (
         reset_token is None
         or reset_token.used_at is not None
-        or reset_token.expires_at < datetime.now(timezone.utc)
+        or reset_token.expires_at < utcnow()
     ):
         raise InvalidOrExpiredResetTokenError(token)
 
     user = db.get(User, reset_token.user_id)
     user.hashed_password = hash_password(new_password)
-    reset_token.used_at = datetime.now(timezone.utc)
+    reset_token.used_at = utcnow()
     db.commit()
 
 
@@ -133,7 +134,7 @@ def delete_expired_reset_tokens(db: Session) -> int:
         .filter(
             or_(
                 PasswordResetToken.used_at.is_not(None),
-                PasswordResetToken.expires_at < datetime.now(timezone.utc),
+                PasswordResetToken.expires_at < utcnow().replace(tzinfo=None),
             )
         )
         .delete(synchronize_session=False)
@@ -191,7 +192,7 @@ def authenticate_or_create_firebase_user(db: Session, decoded_token: dict) -> Us
         firebase_uid=firebase_uid,
         phone_verified=True if phone_number is not None else False,
         referral_code=_generate_referral_code(db),
-        accepted_terms_at=datetime.now(timezone.utc),
+        accepted_terms_at=utcnow(),
     )
     db.add(new_user)
     db.commit()

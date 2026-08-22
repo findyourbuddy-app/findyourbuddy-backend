@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -20,4 +20,4 @@ class MatchFeedback(Base):
     rated_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     met_in_person: Mapped[bool | None] = mapped_column(default=None)
     notified_at: Mapped[datetime | None] = mapped_column(default=None)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))

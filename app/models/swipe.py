@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Enum, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,4 +22,4 @@ class Swipe(Base):
     target_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
     direction: Mapped[SwipeDirection] = mapped_column(Enum(SwipeDirection))
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), index=True)

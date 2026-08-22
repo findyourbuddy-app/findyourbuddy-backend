@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from app.core.datetime_utils import utcnow
 
 from sqlalchemy.orm import Session
 
@@ -31,7 +32,7 @@ class BlockedUserError(Exception):
 
 
 def _swipes_made_today(db: Session, swiper_id: int, direction: SwipeDirection | None = None) -> int:
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     query = db.query(Swipe).filter(Swipe.swiper_id == swiper_id, Swipe.created_at >= today_start)
     if direction is not None:
         query = query.filter(Swipe.direction == direction)
@@ -41,7 +42,7 @@ def _swipes_made_today(db: Session, swiper_id: int, direction: SwipeDirection | 
 def _likes_made_today(db: Session, swiper_id: int) -> int:
     """Passes are free and unlimited; only LIKE/SUPER_LIKE count against the
     daily allowance (the super-like sub-quota is enforced separately)."""
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     return (
         db.query(Swipe)
         .filter(
@@ -198,7 +199,7 @@ def list_swipe_candidates(
             ]
 
     boosted_ids = premium_user_ids(db, [user.id for user in candidates])
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     
     # Sort candidates: Active Spotlight Boost users first, then Premium users, then sub-sorted by recommendation score (descending)
     from app.services.recommendation_service import RecommendationService

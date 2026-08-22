@@ -2,6 +2,7 @@ import io
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from app.core.datetime_utils import utcnow
 
 import iyzipay
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, responses, status
@@ -363,7 +364,7 @@ def activate_boost(
     if current_user.boosts_balance > 0:
         current_user.boosts_balance -= 1
     
-    current_user.boosted_until = datetime.now(timezone.utc) + timedelta(minutes=60)
+    current_user.boosted_until = utcnow() + timedelta(minutes=60)
     db.commit()
     db.refresh(current_user)
     return current_user
@@ -393,7 +394,7 @@ def create_purchase_checkout_session(
         "secret_key": settings.iyzico_secret_key,
         "base_url": settings.iyzico_base_url,
     }
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "0.0.0.0").split(",")[0].strip()
     gsm = current_user.phone_number or "+905300000000"
 

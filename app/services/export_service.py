@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from app.core.datetime_utils import utcnow
 
 from sqlalchemy.orm import Session
 
@@ -58,7 +59,7 @@ def export_user_data(db: Session, user: User) -> UserDataExport:
     subscription = db.query(Subscription).filter(Subscription.user_id == user.id).first()
 
     return UserDataExport(
-        exported_at=datetime.now(timezone.utc),
+        exported_at=utcnow(),
         profile=UserRead.model_validate(user),
         events_created=[EventRead.model_validate(event) for event in events_created],
         matches=matches,

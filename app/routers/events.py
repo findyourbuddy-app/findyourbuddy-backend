@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime, timezone
+from app.core.datetime_utils import utcnow
 
 import iyzipay
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, responses, status
@@ -191,7 +192,7 @@ def create_credits_checkout_session(
         "base_url": settings.iyzico_base_url,
     }
 
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "0.0.0.0").split(",")[0].strip()
     gsm = current_user.phone_number or "+905300000000"
 

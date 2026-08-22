@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -21,4 +21,4 @@ class EventAttendance(Base):
     ticket_image_url: Mapped[str | None] = mapped_column(String(500), default=None)
     ticket_decoded_text: Mapped[str | None] = mapped_column(String(500), default=None)
     ticket_verified_at: Mapped[datetime | None] = mapped_column(default=None)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))

@@ -1,5 +1,6 @@
 import secrets
 from datetime import date, datetime, timedelta, timezone
+from app.core.datetime_utils import utcnow
 
 from sqlalchemy.orm import Session
 
@@ -36,7 +37,7 @@ def update_trust_suspensions(db: Session) -> int:
     settings = get_settings()
     threshold = settings.trust_score_suspension_threshold
     grace = timedelta(days=settings.trust_score_suspension_grace_days)
-    now = datetime.now(timezone.utc)
+    now = utcnow()
 
     active_users = db.query(User).filter(User.is_active.is_(True)).all()
     suspended = 0
