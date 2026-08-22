@@ -36,3 +36,4 @@ media/
 
 # Runtime logs
 *.log
+*log.1
