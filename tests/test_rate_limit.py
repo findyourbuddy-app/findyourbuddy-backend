@@ -13,14 +13,14 @@ def test_login_returns_429_when_rate_limit_exceeded(client: TestClient, monkeypa
             "/auth/register",
             json={
                 "email": "ada@example.com",
-                "password": "s3cret-pass",
+                "password": "S3cret-pass",
                 "display_name": "Ada",
                 "accepted_terms": True,
                 "phone_number": "5000000001",
             },
         )
 
-        login_payload = {"email": "ada@example.com", "password": "s3cret-pass"}
+        login_payload = {"email": "ada@example.com", "password": "S3cret-pass"}
         for _ in range(3):
             response = client.post("/auth/login", json=login_payload)
             assert response.status_code == 200

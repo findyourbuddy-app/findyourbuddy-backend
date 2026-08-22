@@ -12,5 +12,5 @@ class Block(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     blocker_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    blocked_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    blocked_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))

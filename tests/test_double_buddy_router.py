@@ -7,13 +7,13 @@ def _register_and_login(client: TestClient, email: str) -> dict[str, str]:
         "/auth/register",
         json={
             "email": email,
-            "password": "s3cret-pass",
+            "password": "S3cret-pass",
             "display_name": email.split("@")[0],
             "accepted_terms": True,
             "phone_number": f"5{abs(hash(email)) % 10**9:09d}",
         },
     )
-    resp = client.post("/auth/login", json={"email": email, "password": "s3cret-pass"})
+    resp = client.post("/auth/login", json={"email": email, "password": "S3cret-pass"})
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 

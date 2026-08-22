@@ -13,8 +13,8 @@ class Match(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), index=True)
-    user_a_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    user_b_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    user_a_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_b_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     score: Mapped[float] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
     is_active: Mapped[bool] = mapped_column(default=True, server_default="true")

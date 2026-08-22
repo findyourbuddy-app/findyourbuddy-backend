@@ -19,7 +19,7 @@ class Swipe(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     swiper_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    target_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    target_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), index=True)
     direction: Mapped[SwipeDirection] = mapped_column(Enum(SwipeDirection))
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), index=True)

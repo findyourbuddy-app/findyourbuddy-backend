@@ -8,9 +8,9 @@ from tests.conftest import FakeNotificationSender
 def _register_and_login(client: TestClient, email: str) -> dict[str, str]:
     client.post(
         "/auth/register",
-        json={"email": email, "password": "s3cret-pass", "display_name": email, "accepted_terms": True, "phone_number": f"5{abs(hash(email)) % 10**9:09d}"},
+        json={"email": email, "password": "S3cret-pass", "display_name": email, "accepted_terms": True, "phone_number": f"5{abs(hash(email)) % 10**9:09d}"},
     )
-    response = client.post("/auth/login", json={"email": email, "password": "s3cret-pass"})
+    response = client.post("/auth/login", json={"email": email, "password": "S3cret-pass"})
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 

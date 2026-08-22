@@ -79,6 +79,27 @@ class CacheService:
         except Exception as e:
             logger.error("Redis setex error: %s", e)
 
+    # Atomically removes target_id from the JSON array stored at key.
+    # Uses a Lua script so the read-modify-write happens in a single Redis command.
+    _REMOVE_SCRIPT = """
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 0 end
+local ttl = redis.call('TTL', KEYS[1])
+local ids = cjson.decode(raw)
+local new_ids = {}
+for _, v in ipairs(ids) do
+    if v ~= tonumber(ARGV[1]) then
+        table.insert(new_ids, v)
+    end
+end
+if ttl > 0 then
+    redis.call('SETEX', KEYS[1], ttl, cjson.encode(new_ids))
+else
+    redis.call('SET', KEYS[1], cjson.encode(new_ids))
+end
+return 1
+"""
+
     @classmethod
     def remove_swiped_candidate(cls, swiper_id: int, event_id: int, target_id: int) -> None:
         client = cls._get_client()
@@ -87,15 +108,9 @@ class CacheService:
 
         key = f"candidates:{swiper_id}:{event_id}"
         try:
-            # NOTE: Non-atomic read-modify-write. Under high concurrency, two
-            # simultaneous swipes could cause one removal to be lost.
-            # For production scale, replace with Redis LREM on a list type.
-            cached_ids = cls.get_cached_candidates(swiper_id, event_id)
-            if cached_ids and target_id in cached_ids:
-                cached_ids.remove(target_id)
-                cls.set_cached_candidates(swiper_id, event_id, cached_ids)
+            client.eval(cls._REMOVE_SCRIPT, 1, key, target_id)
         except Exception as e:
-            logger.error("Redis remove list item error: %s", e)
+            logger.error("Redis atomic remove error: %s", e)
 
     @classmethod
     def clear_candidates_cache(cls, swiper_id: int, event_id: int) -> None:

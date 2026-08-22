@@ -61,12 +61,20 @@ def send_message(
     return message
 
 
-def list_messages(db: Session, match_id: int, requester_id: int) -> list[Message]:
+def list_messages(
+    db: Session,
+    match_id: int,
+    requester_id: int,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[Message]:
     _get_match_for_participant(db, match_id, requester_id)
     return (
         db.query(Message)
         .filter(Message.match_id == match_id)
         .order_by(Message.created_at)
+        .offset(skip)
+        .limit(limit)
         .all()
     )
 

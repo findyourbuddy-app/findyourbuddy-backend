@@ -22,7 +22,7 @@ def _create_user(db_session: Session) -> None:
         db_session,
         UserCreate(
             email="ada@example.com",
-            password="s3cret-pass",
+            password="S3cret-pass",
             display_name="Ada",
             accepted_terms=True,
             phone_number="5000000001",
@@ -35,7 +35,7 @@ def test_register_user_hashes_password(db_session: Session) -> None:
         db_session,
         UserCreate(
             email="ada@example.com",
-            password="s3cret-pass",
+            password="S3cret-pass",
             display_name="Ada",
             accepted_terms=True,
             phone_number="5000000001",
@@ -43,7 +43,7 @@ def test_register_user_hashes_password(db_session: Session) -> None:
     )
 
     assert user.id is not None
-    assert user.hashed_password != "s3cret-pass"
+    assert user.hashed_password != "S3cret-pass"
 
 
 def test_register_user_rejects_duplicate_email(db_session: Session) -> None:
@@ -54,7 +54,7 @@ def test_register_user_rejects_duplicate_email(db_session: Session) -> None:
             db_session,
             UserCreate(
                 email="ada@example.com",
-                password="another-pass",
+                password="anOther-pass1",
                 display_name="Ada2",
                 accepted_terms=True,
                 phone_number="5000000002",
@@ -65,7 +65,7 @@ def test_register_user_rejects_duplicate_email(db_session: Session) -> None:
 def test_authenticate_user_succeeds_with_correct_password(db_session: Session) -> None:
     _create_user(db_session)
 
-    user = authenticate_user(db_session, "ada@example.com", "s3cret-pass")
+    user = authenticate_user(db_session, "ada@example.com", "S3cret-pass")
 
     assert user.email == "ada@example.com"
 
@@ -101,34 +101,34 @@ def test_reset_password_allows_login_with_new_password(db_session: Session) -> N
     token = request_password_reset(db_session, "ada@example.com")
     assert token is not None
 
-    reset_password(db_session, token, "new-secret-pass")
+    reset_password(db_session, token, "NewSecret1!")
 
-    user = authenticate_user(db_session, "ada@example.com", "new-secret-pass")
+    user = authenticate_user(db_session, "ada@example.com", "NewSecret1!")
     assert user.email == "ada@example.com"
     with pytest.raises(InvalidCredentialsError):
-        authenticate_user(db_session, "ada@example.com", "s3cret-pass")
+        authenticate_user(db_session, "ada@example.com", "S3cret-pass")
 
 
 def test_reset_password_rejects_unknown_token(db_session: Session) -> None:
     with pytest.raises(InvalidOrExpiredResetTokenError):
-        reset_password(db_session, "not-a-real-token", "new-secret-pass")
+        reset_password(db_session, "not-a-real-token", "NewSecret1!")
 
 
 def test_reset_password_rejects_reused_token(db_session: Session) -> None:
     _create_user(db_session)
     token = request_password_reset(db_session, "ada@example.com")
     assert token is not None
-    reset_password(db_session, token, "new-secret-pass")
+    reset_password(db_session, token, "NewSecret1!")
 
     with pytest.raises(InvalidOrExpiredResetTokenError):
-        reset_password(db_session, token, "another-pass")
+        reset_password(db_session, token, "anOther-pass1")
 
 
 def test_delete_expired_reset_tokens_removes_used_and_expired_only(db_session: Session) -> None:
     _create_user(db_session)
     token = request_password_reset(db_session, "ada@example.com")
     assert token is not None
-    reset_password(db_session, token, "new-secret-pass")  # marks it used
+    reset_password(db_session, token, "NewSecret1!")  # marks it used
 
     fresh_token = request_password_reset(db_session, "ada@example.com")
     assert fresh_token is not None

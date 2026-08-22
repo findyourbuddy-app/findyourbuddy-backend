@@ -28,6 +28,12 @@ class UserCreate(BaseModel):
     referral_code: str | None = None
     phone_number: str | None = None
 
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, v: str) -> str:
+        from app.schemas.auth import _validate_password_strength
+        return _validate_password_strength(v)
+
     @field_validator("accepted_terms")
     @classmethod
     def _require_accepted_terms(cls, value: bool) -> bool:

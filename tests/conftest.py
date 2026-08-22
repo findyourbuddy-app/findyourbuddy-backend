@@ -97,13 +97,13 @@ def auth_headers(client: TestClient) -> dict[str, str]:
         "/auth/register",
         json={
             "email": "ada@example.com",
-            "password": "s3cret-pass",
+            "password": "S3cret-pass",
             "display_name": "Ada",
             "accepted_terms": True,
             "phone_number": "5000000001",
         },
     )
     response = client.post(
-        "/auth/login", json={"email": "ada@example.com", "password": "s3cret-pass"}
+        "/auth/login", json={"email": "ada@example.com", "password": "S3cret-pass"}
     )
     return {"Authorization": f"Bearer {response.json()['access_token']}"}

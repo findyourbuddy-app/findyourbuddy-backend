@@ -18,7 +18,7 @@ def test_update_profile_applies_only_provided_fields(db_session: Session) -> Non
         db_session,
         UserCreate(
             email="ada@example.com",
-            password="s3cret-pass",
+            password="S3cret-pass",
             display_name="Ada",
             accepted_terms=True,
             phone_number="5000000001",
@@ -41,7 +41,7 @@ def test_update_profile_ignores_unset_fields(db_session: Session) -> None:
         db_session,
         UserCreate(
             email="ada@example.com",
-            password="s3cret-pass",
+            password="S3cret-pass",
             display_name="Ada",
             accepted_terms=True,
             phone_number="5000000001",
@@ -60,7 +60,7 @@ def test_delete_account_deactivates_and_scrubs_pii(db_session: Session) -> None:
         db_session,
         UserCreate(
             email="ada@example.com",
-            password="s3cret-pass",
+            password="S3cret-pass",
             display_name="Ada",
             accepted_terms=True,
             phone_number="5000000001",
@@ -99,7 +99,7 @@ def test_delete_account_prevents_future_login(db_session: Session) -> None:
         db_session,
         UserCreate(
             email="ada@example.com",
-            password="s3cret-pass",
+            password="S3cret-pass",
             display_name="Ada",
             accepted_terms=True,
             phone_number="5000000001",
@@ -109,7 +109,7 @@ def test_delete_account_prevents_future_login(db_session: Session) -> None:
     delete_account(db_session, user)
 
     with pytest.raises(InvalidCredentialsError):
-        authenticate_user(db_session, "ada@example.com", "s3cret-pass")
+        authenticate_user(db_session, "ada@example.com", "S3cret-pass")
 
 
 def test_delete_account_frees_email_for_reuse(db_session: Session) -> None:
@@ -117,7 +117,7 @@ def test_delete_account_frees_email_for_reuse(db_session: Session) -> None:
         db_session,
         UserCreate(
             email="ada@example.com",
-            password="s3cret-pass",
+            password="S3cret-pass",
             display_name="Ada",
             accepted_terms=True,
             phone_number="5000000001",
@@ -129,7 +129,7 @@ def test_delete_account_frees_email_for_reuse(db_session: Session) -> None:
         db_session,
         UserCreate(
             email="ada@example.com",
-            password="another-pass",
+            password="anOther-pass1",
             display_name="Ada2",
             accepted_terms=True,
             phone_number="5000000002",
