@@ -18,6 +18,7 @@ from app.routers import (
     admin,
     auth,
     bookmarks,
+    calls,
     double_buddy,
     events,
     geocoding,
@@ -128,6 +129,7 @@ routers = [
     internal.router,
     geocoding.router,
     double_buddy.router,
+    calls.router,
 ]
 
 for r in routers:

@@ -17,6 +17,17 @@ class Settings(BaseSettings):
     iyzico_base_url: str = "sandbox-api.iyzipay.com"
     iyzico_buyer_identity_number: str = "11111111111"
     subscription_price_try: str = "99.00"
+
+    turn_urls: list[str] = []
+    turn_username: str = ""
+    turn_credential: str = ""
+
+    @field_validator("turn_urls", mode="before")
+    @classmethod
+    def _split_turn_urls(cls, value: str | list[str]) -> str | list[str]:
+        if isinstance(value, str):
+            return [u.strip() for u in value.split(",") if u.strip()]
+        return value
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 30
