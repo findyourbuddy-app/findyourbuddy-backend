@@ -49,26 +49,6 @@ _is_production = settings.environment == "production"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.core.scheduler import run_cleanup_jobs
-    from app.database import Base, engine
-    from sqlalchemy import inspect, text
-
-    try:
-        Base.metadata.create_all(bind=engine)
-        with engine.connect() as conn:
-            inspector = inspect(engine)
-            if "users" in inspector.get_table_names():
-                cols = {c["name"] for c in inspector.get_columns("users")}
-                if "hidden_fields" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN hidden_fields JSON DEFAULT '[]'"))
-                    conn.commit()
-                if "languages_spoken" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN languages_spoken JSON DEFAULT '[]'"))
-                    conn.commit()
-                if "firebase_uid" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN firebase_uid VARCHAR(128)"))
-                    conn.commit()
-    except Exception:
-        _logger.exception("Startup DDL migration failed")
 
     start_scheduler()
     try:
