@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 from app.core.deps import get_current_user
 from app.core.password_reset import PasswordResetSender, get_password_reset_sender
 from app.core.rate_limit import auth_rate_limit, limiter
-from app.core.security import create_access_token, create_refresh_token, decode_refresh_token
+from app.core.security import create_access_token, create_refresh_token, decode_refresh_token_with_version
 from app.database import get_db
 from app.models.user import User
 from app.schemas.auth import (
@@ -71,7 +71,7 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)) -
         ) from exc
     return Token(
         access_token=create_access_token(subject=str(user.id)),
-        refresh_token=create_refresh_token(subject=str(user.id)),
+        refresh_token=create_refresh_token(subject=str(user.id), token_version=user.token_version),
     )
 
 
@@ -82,15 +82,21 @@ def refresh(request: Request, data: RefreshRequest, db: Session = Depends(get_db
     credentials_error = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"
     )
-    user_id = decode_refresh_token(data.refresh_token)
-    if user_id is None:
+    result = decode_refresh_token_with_version(data.refresh_token)
+    if result is None:
         raise credentials_error
+    user_id, token_version = result
     user = db.get(User, int(user_id))
     if user is None or not user.is_active:
         raise credentials_error
+    if user.token_version != token_version:
+        raise credentials_error
+    # Rotate: increment version so the old refresh token is immediately invalidated
+    user.token_version += 1
+    db.commit()
     return Token(
         access_token=create_access_token(subject=str(user.id)),
-        refresh_token=create_refresh_token(subject=str(user.id)),
+        refresh_token=create_refresh_token(subject=str(user.id), token_version=user.token_version),
     )
 
 
@@ -165,7 +171,7 @@ def firebase_login(
         ) from exc
 
     user = authenticate_or_create_firebase_user(db, decoded_token)
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(str(user.id))
+    refresh_token = create_refresh_token(str(user.id), token_version=user.token_version)
     return Token(access_token=access_token, refresh_token=refresh_token)
 

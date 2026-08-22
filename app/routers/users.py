@@ -23,7 +23,7 @@ from app.services.device_token_service import register_device_token, unregister_
 from app.services.export_service import export_user_data
 from app.services.media_service import MediaStorage, get_media_storage
 from app.services.media_validation import ImageTooLargeError, InvalidImageError, compress_image, validate_image
-from app.services.payment_service import claim_payment_callback
+from app.services.payment_service import apply_purchase, claim_payment_callback
 from app.services.user_photo_service import (
     PhotoNotFoundError,
     TooManyPhotosError,
@@ -48,15 +48,6 @@ PURCHASE_ITEM_PRICES_TRY = {
     "super_likes": "19.00",
     "swipes": "29.00",
 }
-
-
-def _apply_purchase(user: User, item_type: str, quantity: int) -> None:
-    if item_type == "boost":
-        user.boosts_balance += quantity
-    elif item_type == "super_likes":
-        user.extra_super_likes += quantity
-    elif item_type == "swipes":
-        user.bonus_swipe_credits += quantity * 50  # 50 extra swipes per package
 
 
 def _upload_validated_photo(file: UploadFile, storage: MediaStorage) -> str:
@@ -248,62 +239,7 @@ def get_ai_match_llm(
     return generate_llm_kanka_synergy(current_user, target_user)
 
 
-ZODIAC_ELEMENTS = {
-    "Koç": "Fire", "Aslan": "Fire", "Yay": "Fire",
-    "Boğa": "Earth", "Başak": "Earth", "Oğlak": "Earth",
-    "İkizler": "Air", "Terazi": "Air", "Kova": "Air",
-    "Yengeç": "Water", "Akrep": "Water", "Balık": "Water"
-}
-
-ZODIAC_ELEMENT_SYNERGY = {
-    ("Fire", "Fire"): 1.0, ("Fire", "Air"): 1.0, ("Fire", "Earth"): 0.5, ("Fire", "Water"): 0.3,
-    ("Earth", "Earth"): 1.0, ("Earth", "Water"): 1.0, ("Earth", "Air"): 0.5, ("Earth", "Fire"): 0.5,
-    ("Air", "Air"): 1.0, ("Air", "Fire"): 1.0, ("Air", "Water"): 0.5, ("Air", "Earth"): 0.5,
-    ("Water", "Water"): 1.0, ("Water", "Earth"): 1.0, ("Water", "Fire"): 0.3, ("Water", "Air"): 0.5,
-}
-
-def calculate_ai_score(user_a: User, user_b: User) -> float:
-    # 1. Ortak Hobiler & Aktiviteler (%45 Ağırlık)
-    interests_a = user_a.interests or []
-    interests_b = user_b.interests or []
-    shared_interests = set(interests_a) & set(interests_b)
-    total_interests = set(interests_a) | set(interests_b)
-    interest_jaccard = len(shared_interests) / len(total_interests) if total_interests else 0.0
-
-    hobbies_a = user_a.hobbies or []
-    hobbies_b = user_b.hobbies or []
-    shared_hobbies = set(hobbies_a) & set(hobbies_b)
-    total_hobbies = set(hobbies_a) | set(hobbies_b)
-    hobby_jaccard = len(shared_hobbies) / len(total_hobbies) if total_hobbies else 0.0
-
-    if total_interests and total_hobbies:
-        combined_interest_hobby = 0.5 * interest_jaccard + 0.5 * hobby_jaccard
-    elif total_hobbies:
-        combined_interest_hobby = hobby_jaccard
-    else:
-        combined_interest_hobby = interest_jaccard
-    
-    interests_hobbies_score = combined_interest_hobby * 45.0
-
-    # 2. Astrolojik Element Sinerjisi (%25 Ağırlık)
-    zodiac_score = 10.0
-    if user_a.zodiac_sign and user_b.zodiac_sign:
-        el_a = ZODIAC_ELEMENTS.get(user_a.zodiac_sign)
-        el_b = ZODIAC_ELEMENTS.get(user_b.zodiac_sign)
-        if el_a and el_b:
-            synergy_ratio = ZODIAC_ELEMENT_SYNERGY.get((el_a, el_b), 0.5)
-            zodiac_score = synergy_ratio * 25.0
-
-    # 3. Mesafe ve Konum Analizi (%30 Ağırlık)
-    location_score = 15.0
-    has_coords = None not in (user_a.latitude, user_a.longitude, user_b.latitude, user_b.longitude)
-    if has_coords:
-        from app.core.geo import haversine_km
-        dist = haversine_km(user_a.latitude, user_a.longitude, user_b.latitude, user_b.longitude)
-        location_score = max(0.0, (1.0 - dist / 100.0) * 30.0)
-
-    total_score = interests_hobbies_score + zodiac_score + location_score
-    return round(min(99.0, max(50.0, total_score)), 1)
+_AI_RECOMMENDATION_CANDIDATE_POOL = 200
 
 
 @router.get("/me/ai-recommendations", response_model=list[AIRecommendation])
@@ -312,32 +248,32 @@ def get_ai_recommendations(
     db: Session = Depends(get_db),
 ) -> list[AIRecommendation]:
     from app.models.swipe import Swipe
+    from app.services.recommendation_service import RecommendationService
     from app.services.safety_service import blocked_user_ids
-    
-    # Get user IDs already swiped on by the user
-    swiped_ids = {s.target_id for s in db.query(Swipe).filter(Swipe.swiper_id == current_user.id).all()}
-    # Get user IDs blocked by the user
+
+    swiped_ids = {
+        s.target_id
+        for s in db.query(Swipe.target_id).filter(Swipe.swiper_id == current_user.id).all()
+    }
     blocked_ids = set(blocked_user_ids(db, current_user.id))
-    
     exclude_ids = swiped_ids | blocked_ids | {current_user.id}
-    
+
     query = db.query(User).filter(User.is_active.is_(True))
     if exclude_ids:
         query = query.filter(User.id.not_in(exclude_ids))
-    candidates = query.all()
-    
-    results = []
-    for cand in candidates:
-        score = calculate_ai_score(current_user, cand)
-        results.append(
+    candidates = query.limit(_AI_RECOMMENDATION_CANDIDATE_POOL).all()
+
+    results = sorted(
+        [
             AIRecommendation(
                 user=UserRead.model_validate(cand),
-                match_score=round(score, 1)
+                match_score=RecommendationService.score_ai_recommendation(current_user, cand),
             )
-        )
-        
-    # Sort by match score in descending order
-    results.sort(key=lambda r: r.match_score, reverse=True)
+            for cand in candidates
+        ],
+        key=lambda r: r.match_score,
+        reverse=True,
+    )
     return results[:10]
 
 
@@ -499,7 +435,7 @@ async def purchase_callback(
                 if claim_payment_callback(db, token, "purchase", int(user_id)):
                     user = db.get(User, int(user_id))
                     if user is not None:
-                        _apply_purchase(user, item_type, int(quantity))
+                        apply_purchase(user, item_type, int(quantity))
                         db.commit()
                 return responses.HTMLResponse(content=f"""
                     <html>

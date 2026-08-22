@@ -6,6 +6,11 @@ from app.models.message import Message
 from app.models.notification import Notification
 
 
+def notify_new_like(db: Session, target_user_id: int) -> None:
+    db.add(Notification(user_id=target_user_id, title="Yeni Beğeni!", body="Biri seni kanka olarak beğendi."))
+    db.commit()
+
+
 def notify_match_created(db: Session, sender: NotificationSender, match: Match) -> None:
     body = "FindYourBuddy'de yeni bir kanka eşleşmen var!"
     title = "Yeni Eşleşme! 🎉"

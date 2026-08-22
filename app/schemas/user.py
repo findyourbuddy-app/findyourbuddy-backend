@@ -31,8 +31,8 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def _validate_password(cls, v: str) -> str:
-        from app.schemas.auth import _validate_password_strength
-        return _validate_password_strength(v)
+        from app.core.password_policy import validate_password_strength
+        return validate_password_strength(v)
 
     @field_validator("accepted_terms")
     @classmethod

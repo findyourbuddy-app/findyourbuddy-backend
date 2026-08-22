@@ -156,6 +156,24 @@ def _other_user_id(match: Match, user_id: int) -> int:
     return match.user_b_id if match.user_a_id == user_id else match.user_a_id
 
 
+class UnmatchNotFoundError(Exception):
+    pass
+
+
+class UnmatchForbiddenError(Exception):
+    pass
+
+
+def unmatch(db: Session, match_id: int, user_id: int) -> None:
+    match = db.get(Match, match_id)
+    if match is None:
+        raise UnmatchNotFoundError(match_id)
+    if user_id not in (match.user_a_id, match.user_b_id):
+        raise UnmatchForbiddenError(user_id)
+    match.is_active = False
+    db.commit()
+
+
 def list_matches_for_user(
     db: Session, user_id: int, skip: int = 0, limit: int = 50
 ) -> list[Match]:
