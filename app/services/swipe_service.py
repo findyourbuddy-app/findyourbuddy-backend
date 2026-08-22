@@ -11,7 +11,9 @@ from app.models.event_attendance import EventAttendance
 from app.models.swipe import Swipe, SwipeDirection
 from app.models.user import User
 from app.schemas.swipe import SwipeCreate
+from app.services.cache_service import CacheService
 from app.services.event_service import join_event
+from app.services.recommendation_service import RecommendationService
 from app.services.safety_service import blocked_user_ids, is_blocked
 from app.services.subscription_service import is_premium, premium_user_ids
 
@@ -108,9 +110,8 @@ def record_swipe(db: Session, swiper_id: int, data: SwipeCreate) -> Swipe:
     db.add(swipe)
     db.commit()
     db.refresh(swipe)
-    
+
     # Gracefully remove target_id from the swiper's cached candidate list in Redis
-    from app.services.cache_service import CacheService
     CacheService.remove_swiped_candidate(swiper_id, data.event_id, data.target_id)
     
     return swipe
@@ -129,8 +130,6 @@ def list_swipe_candidates(
         return []
 
     # Try to load candidate IDs from Redis cache first
-    from app.services.cache_service import CacheService
-    
     # We only cache the default view (when filters min_age/max_age/max_distance_km are empty)
     # to avoid caching multiple filter permutations.
     is_default_query = min_age is None and max_age is None and max_distance_km is None
@@ -198,10 +197,8 @@ def list_swipe_candidates(
 
     boosted_ids = premium_user_ids(db, [user.id for user in candidates])
     now = utcnow()
-    
+
     # Sort candidates: Active Spotlight Boost users first, then Premium users, then sub-sorted by recommendation score (descending)
-    from app.services.recommendation_service import RecommendationService
-    
     candidates.sort(
         key=lambda user: (
             not (user.boosted_until is not None and user.boosted_until > now),  # Active Spotlight Boost users first

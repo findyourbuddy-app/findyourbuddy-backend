@@ -13,6 +13,7 @@ from app.models.match import Match
 from app.models.swipe import Swipe
 from app.models.user import User
 from app.schemas.event import EventCreate
+from app.services.llm_moderation_service import moderate_new_event
 
 CHECK_IN_RADIUS_KM = 1.0
 CHECK_IN_TRUST_SCORE_BONUS = 1
@@ -39,9 +40,6 @@ def count_events_created_this_week(db: Session, creator_id: int) -> int:
         .filter(Event.creator_id == creator_id, Event.created_at >= week_start)
         .count()
     )
-
-
-from app.services.llm_moderation_service import moderate_new_event
 
 
 def create_event(db: Session, data: EventCreate, creator_id: int, is_premium: bool = False) -> Event:
