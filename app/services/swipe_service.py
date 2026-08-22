@@ -1,5 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
+from app.core.datetime_utils import utcnow
 
+from sqlalchemy import exists
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -9,7 +11,9 @@ from app.models.event_attendance import EventAttendance
 from app.models.swipe import Swipe, SwipeDirection
 from app.models.user import User
 from app.schemas.swipe import SwipeCreate
+from app.services.cache_service import CacheService
 from app.services.event_service import join_event
+from app.services.recommendation_service import RecommendationService
 from app.services.safety_service import blocked_user_ids, is_blocked
 from app.services.subscription_service import is_premium, premium_user_ids
 
@@ -31,7 +35,7 @@ class BlockedUserError(Exception):
 
 
 def _swipes_made_today(db: Session, swiper_id: int, direction: SwipeDirection | None = None) -> int:
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     query = db.query(Swipe).filter(Swipe.swiper_id == swiper_id, Swipe.created_at >= today_start)
     if direction is not None:
         query = query.filter(Swipe.direction == direction)
@@ -41,7 +45,7 @@ def _swipes_made_today(db: Session, swiper_id: int, direction: SwipeDirection | 
 def _likes_made_today(db: Session, swiper_id: int) -> int:
     """Passes are free and unlimited; only LIKE/SUPER_LIKE count against the
     daily allowance (the super-like sub-quota is enforced separately)."""
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     return (
         db.query(Swipe)
         .filter(
@@ -54,16 +58,13 @@ def _likes_made_today(db: Session, swiper_id: int) -> int:
 
 
 def _already_swiped(db: Session, swiper_id: int, target_id: int, event_id: int) -> bool:
-    existing = (
-        db.query(Swipe)
-        .filter(
+    return db.query(
+        exists().where(
             Swipe.swiper_id == swiper_id,
             Swipe.target_id == target_id,
             Swipe.event_id == event_id,
         )
-        .first()
-    )
-    return existing is not None
+    ).scalar()
 
 
 def get_swipe_quota(db: Session, swiper_id: int) -> dict:
@@ -109,9 +110,8 @@ def record_swipe(db: Session, swiper_id: int, data: SwipeCreate) -> Swipe:
     db.add(swipe)
     db.commit()
     db.refresh(swipe)
-    
+
     # Gracefully remove target_id from the swiper's cached candidate list in Redis
-    from app.services.cache_service import CacheService
     CacheService.remove_swiped_candidate(swiper_id, data.event_id, data.target_id)
     
     return swipe
@@ -130,8 +130,6 @@ def list_swipe_candidates(
         return []
 
     # Try to load candidate IDs from Redis cache first
-    from app.services.cache_service import CacheService
-    
     # We only cache the default view (when filters min_age/max_age/max_distance_km are empty)
     # to avoid caching multiple filter permutations.
     is_default_query = min_age is None and max_age is None and max_distance_km is None
@@ -198,11 +196,9 @@ def list_swipe_candidates(
             ]
 
     boosted_ids = premium_user_ids(db, [user.id for user in candidates])
-    now = datetime.utcnow()
-    
+    now = utcnow()
+
     # Sort candidates: Active Spotlight Boost users first, then Premium users, then sub-sorted by recommendation score (descending)
-    from app.services.recommendation_service import RecommendationService
-    
     candidates.sort(
         key=lambda user: (
             not (user.boosted_until is not None and user.boosted_until > now),  # Active Spotlight Boost users first
@@ -218,49 +214,49 @@ def list_swipe_candidates(
     return candidates
 
 
-def list_incoming_likes(db: Session, user_id: int, event_id: int | None = None) -> list[dict]:
+def list_incoming_likes(
+    db: Session,
+    user_id: int,
+    event_id: int | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[dict]:
     """Users who liked `user_id` but haven't been reciprocated yet
     (a mutual like already creates a Match, so this is inherently pending-only)."""
-    # 1. Fetch swipes that liked target user
     query = db.query(Swipe).filter(
         Swipe.target_id == user_id,
         Swipe.direction.in_([SwipeDirection.LIKE, SwipeDirection.SUPER_LIKE]),
     )
     if event_id is not None:
         query = query.filter(Swipe.event_id == event_id)
-        
     swipes = query.all()
-    
-    # Exclude blocked users and user's own ID
+
     excluded_ids = {user_id, *blocked_user_ids(db, user_id)}
-    
-    res = []
-    # Use cache to avoid redundant db queries for swiper details
-    user_cache = {}
-    
-    for swipe in swipes:
-        if swipe.swiper_id in excluded_ids:
-            continue
-            
-        # Check if target user has already swiped back on this swiper for this event
-        already_swiped = db.query(Swipe).filter(
-            Swipe.swiper_id == user_id,
-            Swipe.target_id == swipe.swiper_id,
-            Swipe.event_id == swipe.event_id
-        ).first()
-        
-        if already_swiped is not None:
-            continue
-            
-        # Get swiper user details
-        if swipe.swiper_id not in user_cache:
-            user_cache[swipe.swiper_id] = db.get(User, swipe.swiper_id)
-            
-        swiper_user = user_cache[swipe.swiper_id]
-        if swiper_user and swiper_user.is_active:
-            res.append({
-                "user": swiper_user,
-                "event_id": swipe.event_id
-            })
-            
-    return res
+    already_swiped_pairs = {
+        (target_id, ev_id)
+        for target_id, ev_id in db.query(Swipe.target_id, Swipe.event_id)
+        .filter(Swipe.swiper_id == user_id)
+        .all()
+    }
+
+    candidate_swipes = [
+        swipe
+        for swipe in swipes
+        if swipe.swiper_id not in excluded_ids
+        and (swipe.swiper_id, swipe.event_id) not in already_swiped_pairs
+    ]
+
+    # Batch-fetch all relevant users in one query (no N+1)
+    swiper_ids = {s.swiper_id for s in candidate_swipes}
+    users_by_id = {
+        u.id: u
+        for u in db.query(User).filter(User.id.in_(swiper_ids), User.is_active.is_(True)).all()
+    }
+
+    res = [
+        {"user": users_by_id[swipe.swiper_id], "event_id": swipe.event_id}
+        for swipe in candidate_swipes
+        if swipe.swiper_id in users_by_id
+    ]
+
+    return res[skip : skip + limit]

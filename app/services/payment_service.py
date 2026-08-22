@@ -2,6 +2,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.payment_callback import PaymentCallback
+from app.models.user import User
+
+
+def apply_purchase(user: User, item_type: str, quantity: int) -> None:
+    if item_type == "boost":
+        user.boosts_balance += quantity
+    elif item_type == "super_likes":
+        user.extra_super_likes += quantity
+    elif item_type == "swipes":
+        user.bonus_swipe_credits += quantity * 50
 
 
 def claim_payment_callback(db: Session, token: str, purpose: str, user_id: int) -> bool:

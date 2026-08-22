@@ -1,6 +1,7 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from app.core.datetime_utils import utcnow
 
-from sqlalchemy import func
+from sqlalchemy import exists, func
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -12,6 +13,7 @@ from app.models.match import Match
 from app.models.swipe import Swipe
 from app.models.user import User
 from app.schemas.event import EventCreate
+from app.services.llm_moderation_service import moderate_new_event
 
 CHECK_IN_RADIUS_KM = 1.0
 CHECK_IN_TRUST_SCORE_BONUS = 1
@@ -32,15 +34,12 @@ class EventCheckInOutsideWindowError(Exception):
 
 
 def count_events_created_this_week(db: Session, creator_id: int) -> int:
-    week_start = datetime.utcnow() - timedelta(days=7)
+    week_start = utcnow() - timedelta(days=7)
     return (
         db.query(Event)
         .filter(Event.creator_id == creator_id, Event.created_at >= week_start)
         .count()
     )
-
-
-from app.services.llm_moderation_service import moderate_new_event
 
 
 def create_event(db: Session, data: EventCreate, creator_id: int, is_premium: bool = False) -> Event:
@@ -85,7 +84,7 @@ def list_events(
     if category is not None:
         query = query.filter(Event.category == category)
     if upcoming_only:
-        query = query.filter(Event.starts_at >= datetime.utcnow())
+        query = query.filter(Event.starts_at >= utcnow())
     # Filtering "user" origin client-side over a date-sorted page would only
     # ever see user events once enough system events (there can be
     # thousands) have scrolled past chronologically -- do it in the query.
@@ -97,11 +96,9 @@ def list_events(
 
 
 def join_event(db: Session, event_id: int, user_id: int) -> EventAttendance:
-    existing = (
-        db.query(EventAttendance)
-        .filter(EventAttendance.event_id == event_id, EventAttendance.user_id == user_id)
-        .first()
-    )
+    existing = db.query(EventAttendance).filter(
+        EventAttendance.event_id == event_id, EventAttendance.user_id == user_id
+    ).first()
     if existing is not None:
         return existing
     event = db.get(Event, event_id)
@@ -123,7 +120,7 @@ def check_in_to_event(
     if event is None:
         raise ValueError(f"Event {event_id} not found")
 
-    now = datetime.utcnow()
+    now = utcnow()
     window_start = event.starts_at - timedelta(hours=1)
     window_end = event.starts_at + timedelta(hours=CHECK_IN_WINDOW_AFTER_HOURS)
     if not (window_start <= now <= window_end):
@@ -149,7 +146,7 @@ def apply_no_show_penalties(db: Session) -> int:
     once the event's check-in window has closed. Runs from the scheduler --
     a no-show can only be judged after the event is already over, so this
     can't happen at request time like the check-in bonus does."""
-    cutoff = datetime.utcnow() - timedelta(hours=CHECK_IN_WINDOW_AFTER_HOURS)
+    cutoff = utcnow() - timedelta(hours=CHECK_IN_WINDOW_AFTER_HOURS)
     attendances = (
         db.query(EventAttendance)
         .join(Event, Event.id == EventAttendance.event_id)
@@ -161,34 +158,41 @@ def apply_no_show_penalties(db: Session) -> int:
         )
         .all()
     )
-    penalized = 0
+    if not attendances:
+        return 0
+
+    user_ids = {a.user_id for a in attendances}
+    users_by_id = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
+
+    now = utcnow()
     for attendance in attendances:
-        user = db.get(User, attendance.user_id)
+        user = users_by_id.get(attendance.user_id)
         if user is not None:
             user.trust_score -= NO_SHOW_TRUST_SCORE_PENALTY
-        attendance.no_show_penalized_at = datetime.utcnow()
-        penalized += 1
-    if penalized:
-        db.commit()
-    return penalized
+        attendance.no_show_penalized_at = now
+
+    db.commit()
+    return len(attendances)
 
 
 def is_ticket_verified(db: Session, event_id: int, user_id: int) -> bool:
-    attendance = (
-        db.query(EventAttendance)
-        .filter(EventAttendance.event_id == event_id, EventAttendance.user_id == user_id)
-        .first()
-    )
-    return attendance is not None and attendance.ticket_verified_at is not None
+    return db.query(
+        exists().where(
+            EventAttendance.event_id == event_id,
+            EventAttendance.user_id == user_id,
+            EventAttendance.ticket_verified_at.is_not(None),
+        )
+    ).scalar()
 
 
 def is_checked_in(db: Session, event_id: int, user_id: int) -> bool:
-    attendance = (
-        db.query(EventAttendance)
-        .filter(EventAttendance.event_id == event_id, EventAttendance.user_id == user_id)
-        .first()
-    )
-    return attendance is not None and attendance.checked_in_at is not None
+    return db.query(
+        exists().where(
+            EventAttendance.event_id == event_id,
+            EventAttendance.user_id == user_id,
+            EventAttendance.checked_in_at.is_not(None),
+        )
+    ).scalar()
 
 
 def list_attending_events(db: Session, user_id: int, upcoming_only: bool = True) -> list[Event]:
@@ -198,21 +202,18 @@ def list_attending_events(db: Session, user_id: int, upcoming_only: bool = True)
         .filter(EventAttendance.user_id == user_id, EventAttendance.status == "approved")
     )
     if upcoming_only:
-        query = query.filter(Event.starts_at >= datetime.utcnow())
+        query = query.filter(Event.starts_at >= utcnow())
     return query.order_by(Event.starts_at).all()
 
 
 def is_attending(db: Session, event_id: int, user_id: int) -> bool:
-    return (
-        db.query(EventAttendance)
-        .filter(
+    return db.query(
+        exists().where(
             EventAttendance.event_id == event_id,
             EventAttendance.user_id == user_id,
             EventAttendance.status == "approved",
         )
-        .first()
-        is not None
-    )
+    ).scalar()
 
 
 def count_attendees(db: Session, event_id: int) -> int:
@@ -245,7 +246,7 @@ def delete_expired_events(db: Session, retention_days: int) -> int:
     """Permanently deletes events whose starts_at is older than the retention
     window, along with their swipes/bookmarks. Events that produced at least
     one Match are left untouched so existing conversations are never lost."""
-    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+    cutoff = utcnow() - timedelta(days=retention_days)
     matched_event_ids = (
         db.query(Match.event_id)
         .filter(Match.event_id.isnot(None))
@@ -256,14 +257,15 @@ def delete_expired_events(db: Session, retention_days: int) -> int:
         .filter(Event.starts_at < cutoff, Event.id.notin_(matched_event_ids))
         .all()
     )
+    if not expired_events:
+        return 0
 
-    deleted_count = 0
+    expired_ids = [event.id for event in expired_events]
+    db.query(Swipe).filter(Swipe.event_id.in_(expired_ids)).delete(synchronize_session=False)
+    db.query(Bookmark).filter(Bookmark.event_id.in_(expired_ids)).delete(synchronize_session=False)
+    db.query(EventAttendance).filter(EventAttendance.event_id.in_(expired_ids)).delete(synchronize_session=False)
     for event in expired_events:
-        db.query(Swipe).filter(Swipe.event_id == event.id).delete()
-        db.query(Bookmark).filter(Bookmark.event_id == event.id).delete()
-        db.query(EventAttendance).filter(EventAttendance.event_id == event.id).delete()
         db.delete(event)
-        deleted_count += 1
 
     db.commit()
-    return deleted_count
+    return len(expired_events)

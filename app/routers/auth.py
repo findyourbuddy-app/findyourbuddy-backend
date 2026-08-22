@@ -1,10 +1,13 @@
+import logging
+
+import firebase_admin.auth
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
 from app.core.password_reset import PasswordResetSender, get_password_reset_sender
 from app.core.rate_limit import auth_rate_limit, limiter
-from app.core.security import create_access_token, create_refresh_token, decode_refresh_token
+from app.core.security import create_access_token, create_refresh_token, decode_refresh_token_with_version
 from app.database import get_db
 from app.models.user import User
 from app.schemas.auth import (
@@ -18,6 +21,7 @@ from app.schemas.auth import (
 )
 from app.schemas.user import UserCreate, UserRead
 from app.services.auth_service import (
+    AccountInactiveError,
     EmailAlreadyRegisteredError,
     IncorrectCurrentPasswordError,
     InvalidCredentialsError,
@@ -30,6 +34,8 @@ from app.services.auth_service import (
     request_password_reset,
     reset_password,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -65,9 +71,13 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)) -
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         ) from exc
+    except AccountInactiveError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Hesabınız askıya alınmıştır."
+        ) from exc
     return Token(
         access_token=create_access_token(subject=str(user.id)),
-        refresh_token=create_refresh_token(subject=str(user.id)),
+        refresh_token=create_refresh_token(subject=str(user.id), token_version=user.token_version),
     )
 
 
@@ -78,30 +88,39 @@ def refresh(request: Request, data: RefreshRequest, db: Session = Depends(get_db
     credentials_error = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token"
     )
-    user_id = decode_refresh_token(data.refresh_token)
-    if user_id is None:
+    result = decode_refresh_token_with_version(data.refresh_token)
+    if result is None:
         raise credentials_error
+    user_id, token_version = result
     user = db.get(User, int(user_id))
     if user is None or not user.is_active:
         raise credentials_error
+    if user.token_version != token_version:
+        raise credentials_error
+    # Rotate: increment version so the old refresh token is immediately invalidated
+    user.token_version += 1
+    db.commit()
     return Token(
         access_token=create_access_token(subject=str(user.id)),
-        refresh_token=create_refresh_token(subject=str(user.id)),
+        refresh_token=create_refresh_token(subject=str(user.id), token_version=user.token_version),
     )
 
 
-@router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
-@router.post("/password-reset/request/", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/password-reset/request")
+@router.post("/password-reset/request/")
 @limiter.limit(auth_rate_limit)
 def request_reset(
     request: Request,
     data: PasswordResetRequest,
     db: Session = Depends(get_db),
     reset_sender: PasswordResetSender = Depends(get_password_reset_sender),
-) -> None:
-    reset_token = request_password_reset(db, data.email)
-    if reset_token is not None:
-        reset_sender.send(data.email, reset_token)
+) -> dict:
+    user = db.query(User).filter(User.email == data.email.strip().lower()).first()
+    if user is not None:
+        reset_token = request_password_reset(db, user.email)
+        if reset_token is not None:
+            reset_sender.send(user.email, reset_token)
+    return {"message": "Eğer bu e-posta kayıtlıysa, sıfırlama kodu gönderildi."}
 
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
@@ -117,7 +136,9 @@ def confirm_reset(request: Request, data: PasswordResetConfirm, db: Session = De
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(auth_rate_limit)
 def change_my_password(
+    request: Request,
     data: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -138,17 +159,24 @@ def firebase_login(
     data: FirebaseLoginRequest,
     db: Session = Depends(get_db),
 ) -> Token:
-    import firebase_admin.auth
     try:
         decoded_token = firebase_admin.auth.verify_id_token(data.id_token)
-    except Exception as exc:
+    except (firebase_admin.auth.InvalidIdTokenError, ValueError) as exc:
+        # ValueError covers older SDK versions where InvalidIdTokenError is a ValueError subclass
+        logger.warning("Firebase token verification failed (invalid token): %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid Firebase ID Token: {exc}",
+            detail="Geçersiz veya süresi dolmuş kimlik doğrulama jetonu.",
+        ) from exc
+    except Exception as exc:
+        logger.error("Firebase token verification error (configuration/network): %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Kimlik doğrulama servisi şu an kullanılamıyor. Lütfen tekrar deneyin.",
         ) from exc
 
     user = authenticate_or_create_firebase_user(db, decoded_token)
-    access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id)
+    access_token = create_access_token(str(user.id))
+    refresh_token = create_refresh_token(str(user.id), token_version=user.token_version)
     return Token(access_token=access_token, refresh_token=refresh_token)
 

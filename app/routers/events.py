@@ -1,9 +1,12 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from html import escape
+from app.core.datetime_utils import utcnow
 
 import iyzipay
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, responses, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, responses, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -11,6 +14,8 @@ from app.core.deps import get_current_user
 from app.core.rate_limit import event_writes_rate_limit, limiter
 from app.database import get_db
 from app.models.event import Event
+from app.models.event_attendance import EventAttendance
+from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.event import EventCheckIn, EventCreate, EventCreationQuota, EventPublicSummary, EventRead
 from app.schemas.user import UserRead, UserPublic
@@ -50,8 +55,8 @@ router = APIRouter(prefix="/events", tags=["events"])
 def list_all_events(
     category: str | None = None,
     upcoming_only: bool = True,
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
     origin: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -66,7 +71,6 @@ def list_all_events(
     creator_ids = {e.creator_id for e in events if e.creator_id}
     creators = {u.id: u for u in db.query(User).filter(User.id.in_(creator_ids)).all()} if creator_ids else {}
 
-    from app.models.event_attendance import EventAttendance
     user_attendances = (
         {
             att.event_id: att
@@ -116,7 +120,6 @@ def read_my_attending_events(
     creator_ids = {e.creator_id for e in events if e.creator_id}
     creators = {u.id: u for u in db.query(User).filter(User.id.in_(creator_ids)).all()} if creator_ids else {}
 
-    from app.models.event_attendance import EventAttendance
     user_attendances = (
         {
             att.event_id: att
@@ -179,6 +182,7 @@ def get_creation_quota(
 
 @router.post("/credits/checkout-session")
 def create_credits_checkout_session(
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """Creates a hosted Iyzico checkout form session for buying extra weekly
@@ -190,9 +194,13 @@ def create_credits_checkout_session(
         "base_url": settings.iyzico_base_url,
     }
 
+    now = utcnow()
+    client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "0.0.0.0").split(",")[0].strip()
+    gsm = current_user.phone_number or "+905300000000"
+
     request_data = {
         "locale": "tr",
-        "conversationId": f"credits_{current_user.id}_{int(datetime.utcnow().timestamp())}",
+        "conversationId": f"credits_{current_user.id}_{int(now.timestamp())}",
         "price": EVENT_CREDITS_PRICE_TRY,
         "paidPrice": EVENT_CREDITS_PRICE_TRY,
         "currency": "TRY",
@@ -203,13 +211,13 @@ def create_credits_checkout_session(
             "id": str(current_user.id),
             "name": current_user.display_name or "Buddy",
             "surname": "User",
-            "gsmNumber": "+905300000000",
+            "gsmNumber": gsm,
             "email": current_user.email,
-            "identityNumber": "11111111111",
-            "lastLoginDate": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            "registrationDate": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            "registrationAddress": "Kadikoy, Istanbul",
-            "ip": "85.100.100.100",
+            "identityNumber": settings.iyzico_buyer_identity_number,
+            "lastLoginDate": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "registrationDate": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "registrationAddress": "Turkey",
+            "ip": client_ip,
             "city": "Istanbul",
             "country": "Turkey",
             "zipCode": "34700",
@@ -218,14 +226,14 @@ def create_credits_checkout_session(
             "contactName": current_user.display_name or "Buddy User",
             "city": "Istanbul",
             "country": "Turkey",
-            "address": "Kadikoy, Istanbul",
+            "address": "Turkey",
             "zipCode": "34700",
         },
         "billingAddress": {
             "contactName": current_user.display_name or "Buddy User",
             "city": "Istanbul",
             "country": "Turkey",
-            "address": "Kadikoy, Istanbul",
+            "address": "Turkey",
             "zipCode": "34700",
         },
         "basketItems": [
@@ -302,7 +310,7 @@ async def event_credits_callback(
                     </html>
                 """)
 
-        error_msg = checkout_form.get("errorMessage") or "Ödeme tamamlanamadı."
+        error_msg = escape(checkout_form.get("errorMessage") or "Ödeme tamamlanamadı.")
         return responses.HTMLResponse(content=f"""
             <html>
                 <head>
@@ -326,7 +334,7 @@ async def event_credits_callback(
             <html>
                 <body style="font-family: sans-serif; text-align: center; padding-top: 100px; background: #121212; color: #fff;">
                     <h1 style="color: #F44336;">❌ Bir Hata Oluştu</h1>
-                    <p>{str(exc)}</p>
+                    <p>{escape(str(exc))}</p>
                 </body>
             </html>
         """)
@@ -362,6 +370,13 @@ def create_new_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Event:
+    cutoff = utcnow() - timedelta(minutes=5)
+    starts_at_naive = data.starts_at.replace(tzinfo=None) if data.starts_at.tzinfo else data.starts_at
+    if starts_at_naive < cutoff:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Etkinlik başlangıç zamanı geçmişte olamaz.",
+        )
     try:
         return create_event(
             db, data, creator_id=current_user.id, is_premium=is_premium(db, current_user.id)
@@ -373,7 +388,6 @@ def create_new_event(
         ) from exc
 
 
-from pydantic import BaseModel
 class JoinRequestAction(BaseModel):
     approved: bool
 
@@ -392,7 +406,6 @@ def attend_event(
     attendance = join_event(db, event_id, current_user.id)
     
     if event.is_group_event and event.creator_id:
-        from app.models.notification import Notification
         db.add(Notification(
             user_id=event.creator_id,
             title="Yeni Katılım İsteği!",
@@ -453,7 +466,6 @@ def get_join_requests(
     if event.creator_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only creator can see join requests")
     
-    from app.models.event_attendance import EventAttendance
     requests = (
         db.query(User)
         .join(EventAttendance, EventAttendance.user_id == User.id)
@@ -477,7 +489,6 @@ def handle_join_request(
     if event.creator_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only creator can manage join requests")
     
-    from app.models.event_attendance import EventAttendance
     attendance = (
         db.query(EventAttendance)
         .filter(EventAttendance.event_id == event_id, EventAttendance.user_id == user_id)
@@ -485,10 +496,9 @@ def handle_join_request(
     )
     if attendance is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attendance request not found")
-    
+
     attendance.status = "approved" if data.approved else "rejected"
-    
-    from app.models.notification import Notification
+
     status_label = "onaylandı 🎉" if data.approved else "reddedildi"
     db.add(Notification(
         user_id=user_id,
@@ -509,12 +519,12 @@ def handle_join_request(
 def get_event_attendees(
     event_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[User]:
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     
-    from app.models.event_attendance import EventAttendance
     attendees = (
         db.query(User)
         .join(EventAttendance, EventAttendance.user_id == User.id)

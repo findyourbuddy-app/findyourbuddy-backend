@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy.orm import Session
@@ -34,7 +34,7 @@ def _birth_date_for_age(age: int) -> date:
 def _register(db_session: Session, email: str) -> int:
     user = register_user(
         db_session,
-        UserCreate(email=email, password="s3cret-pass", display_name=email, accepted_terms=True, phone_number=f"5{abs(hash(email)) % 10**9:09d}"),
+        UserCreate(email=email, password="S3cret-pass", display_name=email, accepted_terms=True, phone_number=f"5{abs(hash(email)) % 10**9:09d}"),
     )
     return user.id
 
@@ -48,7 +48,7 @@ def _create_event(db_session: Session, creator_id: int) -> int:
             location_name="Central Park",
             latitude=40.0,
             longitude=-73.0,
-            starts_at=datetime.utcnow() + timedelta(days=1),
+            starts_at=datetime.now(timezone.utc) + timedelta(days=1),
             is_group_event=False,
         ),
         creator_id,

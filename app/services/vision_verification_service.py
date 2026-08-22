@@ -179,7 +179,7 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
             cleaned = re.sub(r"```\s*", "", cleaned).strip()
             parsed = json.loads(cleaned)
 
-            is_same = bool(parsed.get("is_same_person", True))
+            is_same = bool(parsed.get("is_same_person", False))
             reason = parsed.get("reason", "Fotoğraftaki kişi profil fotoğrafınızla uyuşmaktadır.")
             if is_same:
                 user.is_verified = True

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -20,7 +20,7 @@ class Event(Base):
     latitude: Mapped[float] = mapped_column()
     longitude: Mapped[float] = mapped_column()
     starts_at: Mapped[datetime] = mapped_column(index=True)
-    creator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None)
+    creator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
     source: Mapped[str | None] = mapped_column(String(50), default=None)
     external_id: Mapped[str | None] = mapped_column(String(255), default=None)
     source_url: Mapped[str | None] = mapped_column(String(500), default=None)
@@ -31,4 +31,4 @@ class Event(Base):
     ticket_price: Mapped[float | None] = mapped_column(default=None)
     is_approved: Mapped[bool] = mapped_column(default=True, server_default="true")
     approval_rejection_reason: Mapped[str | None] = mapped_column(Text, default=None)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))

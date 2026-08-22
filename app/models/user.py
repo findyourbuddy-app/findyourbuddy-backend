@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, ForeignKey, String, Text, Boolean
@@ -17,9 +17,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[str] = mapped_column(String(100))
-    is_active: Mapped[bool] = mapped_column(default=True)
+    is_active: Mapped[bool] = mapped_column(default=True, index=True)
     is_staff: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
     accepted_terms_at: Mapped[datetime | None] = mapped_column(default=None)
 
     age: Mapped[int | None] = mapped_column(default=None)
@@ -47,7 +47,7 @@ class User(Base):
     trust_score_low_since: Mapped[datetime | None] = mapped_column(default=None)
 
     referral_code: Mapped[str] = mapped_column(String(12), unique=True, index=True)
-    referred_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None)
+    referred_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
     bonus_swipe_credits: Mapped[int] = mapped_column(default=0)
     boosted_until: Mapped[datetime | None] = mapped_column(default=None)
     boosts_balance: Mapped[int] = mapped_column(default=0)
@@ -57,6 +57,7 @@ class User(Base):
     phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     firebase_uid: Mapped[str | None] = mapped_column(String(128), unique=True, index=True, default=None)
+    token_version: Mapped[int] = mapped_column(default=0, server_default="0")
 
     photos: Mapped[list["UserPhoto"]] = relationship(
         "UserPhoto", order_by="UserPhoto.position", lazy="selectin"

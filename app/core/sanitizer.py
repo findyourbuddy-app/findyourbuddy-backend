@@ -17,16 +17,17 @@ def sanitize_text(text: str | None, max_length: int | None = None) -> str:
     # Strip dangerous HTML and script tags
     cleaned = DANGEROUS_HTML_PATTERN.sub("", text)
 
-    # Escape HTML special chars to prevent inline HTML execution in Web/Mobile webviews
-    cleaned = html.escape(cleaned, quote=True)
-
     # Strip null bytes and non-printable control characters
     cleaned = "".join(ch for ch in cleaned if ord(ch) >= 32 or ch in "\n\r\t")
 
     cleaned = cleaned.strip()
 
+    # Truncate BEFORE escaping so entity sequences (e.g. &amp;) are never split
     if max_length and len(cleaned) > max_length:
         cleaned = cleaned[:max_length]
+
+    # Escape HTML special chars to prevent inline HTML execution in Web/Mobile webviews
+    cleaned = html.escape(cleaned, quote=True)
 
     return cleaned
 

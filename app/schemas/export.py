@@ -18,3 +18,7 @@ class UserDataExport(BaseModel):
     messages_sent: list[MessageRead]
     notifications: list[NotificationRead]
     bookmarks: list[BookmarkRead]
+    swipe_history: list[dict] = []
+    blocks_and_reports: list[dict] = []
+    photos: list[dict] = []
+    subscription_history: list[dict] = []

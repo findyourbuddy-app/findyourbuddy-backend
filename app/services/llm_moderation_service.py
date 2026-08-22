@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime, timedelta
+
 import httpx
 from sqlalchemy.orm import Session
 
@@ -10,7 +11,12 @@ except ImportError:
     OpenAI = None
 
 from app.config import get_settings
+from app.core.notifications import get_notification_sender
+from app.core.sanitizer import sanitize_prompt_input
 from app.models.event import Event
+from app.models.notification import Notification
+from app.models.user import User
+from app.services.notification_service import notify_event_approved
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +53,6 @@ def evaluate_event_with_llm(event: Event) -> tuple[bool, str | None]:
     if not settings.novita_api_key:
         # If Novita key is not set, default auto-approve clean text
         return True, None
-
-    from app.core.sanitizer import sanitize_prompt_input
 
     safe_title = sanitize_prompt_input(event.title, max_length=150)
     safe_description = sanitize_prompt_input(event.description, max_length=500)
@@ -124,9 +128,6 @@ def evaluate_event_with_llm(event: Event) -> tuple[bool, str | None]:
     return True, None
 
 
-from app.models.user import User
-
-
 def send_event_approval_email(creator: User, event: Event, db: Session | None = None) -> None:
     """Notifies the user via push and in-app notification when their created event is approved."""
     if not creator:
@@ -134,8 +135,6 @@ def send_event_approval_email(creator: User, event: Event, db: Session | None = 
 
     try:
         if db is not None:
-            from app.core.notifications import get_notification_sender
-            from app.services.notification_service import notify_event_approved
             notify_event_approved(db, get_notification_sender(), creator.id, event.title)
     except Exception as exc:
         logger.error(f"Failed to send event approval notification: {exc}")
@@ -148,8 +147,6 @@ def send_event_rejection_email(creator: User, event: Event, reason: str | None, 
 
     try:
         if db is not None:
-            from app.core.notifications import get_notification_sender
-            from app.models.notification import Notification
             title = "Etkinlik Başvurusu Reddedildi ⚠️"
             body = f"'{event.title}' etkinliğiniz yayınlanamadı: {reason or 'İçerik kurallara uygun bulunamadı.'}"
             sender = get_notification_sender()
@@ -167,8 +164,6 @@ def classify_user_event_category_with_llm(title: str, description: str | None = 
     settings = get_settings()
     if not settings.novita_api_key:
         return None
-
-    from app.core.sanitizer import sanitize_prompt_input
 
     safe_title = sanitize_prompt_input(title, max_length=150)
     safe_description = sanitize_prompt_input(description, max_length=500)

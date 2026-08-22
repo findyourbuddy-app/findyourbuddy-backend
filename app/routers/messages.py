@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
@@ -21,6 +21,7 @@ from app.services.message_service import (
     mark_messages_as_read,
     send_message,
 )
+from app.services.llm_matching_service import generate_llm_icebreakers
 from app.services.notification_service import notify_new_message
 
 router = APIRouter(prefix="/matches/{match_id}/messages", tags=["messages"])
@@ -30,11 +31,13 @@ logger = logging.getLogger(__name__)
 @router.get("/", response_model=list[MessageRead])
 def get_messages(
     match_id: int,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[Message]:
     try:
-        return list_messages(db, match_id, current_user.id)
+        return list_messages(db, match_id, current_user.id, skip=skip, limit=limit)
     except MatchNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Match not found"
@@ -151,6 +154,5 @@ def get_icebreakers(
     if not other_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
 
-    from app.services.llm_matching_service import generate_llm_icebreakers
     return generate_llm_icebreakers(current_user, other_user)
 

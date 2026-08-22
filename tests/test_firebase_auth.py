@@ -27,4 +27,4 @@ def test_firebase_login_invalid_token_returns_401(mock_verify):
 
     res = client.post("/auth/firebase-login", json={"id_token": "invalid_token"})
     assert res.status_code == 401
-    assert "Invalid Firebase ID Token" in res.json()["detail"]
+    assert "Geçersiz" in res.json()["detail"]

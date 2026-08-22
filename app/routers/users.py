@@ -1,7 +1,9 @@
 import io
 import json
 import logging
-from datetime import datetime
+from html import escape
+from datetime import datetime, timedelta, timezone
+from app.core.datetime_utils import utcnow
 
 import iyzipay
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, responses, status
@@ -10,8 +12,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.deps import get_current_user
-from app.core.rate_limit import ai_rate_limit, limiter
+from app.core.rate_limit import ai_rate_limit, limiter, messages_rate_limit
 from app.database import get_db
+from app.models.swipe import Swipe
 from app.models.user import User
 from app.models.user_photo import UserPhoto
 from app.schemas.device_token import DeviceTokenCreate, DeviceTokenRead
@@ -20,9 +23,13 @@ from app.schemas.user import UserRead, UserUpdate, AIRecommendation
 from app.schemas.user_photo import UserPhotoRead
 from app.services.device_token_service import register_device_token, unregister_device_token
 from app.services.export_service import export_user_data
+from app.services.llm_matching_service import generate_llm_kanka_synergy
 from app.services.media_service import MediaStorage, get_media_storage
-from app.services.media_validation import ImageTooLargeError, InvalidImageError, validate_image
-from app.services.payment_service import claim_payment_callback
+from app.services.media_validation import ImageTooLargeError, InvalidImageError, compress_image, validate_image
+from app.services.payment_service import apply_purchase, claim_payment_callback
+from app.services.recommendation_service import RecommendationService
+from app.services.safety_service import blocked_user_ids
+from app.services.subscription_service import is_premium
 from app.services.user_photo_service import (
     PhotoNotFoundError,
     TooManyPhotosError,
@@ -31,9 +38,12 @@ from app.services.user_photo_service import (
     remove_photo,
 )
 from app.services.user_service import delete_account, update_profile
+from app.services.vision_verification_service import verify_user_photo_with_vision
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["users"])
+
+_PRICE_TOLERANCE = 0.01
 
 PURCHASE_ITEM_NAMES = {
     "boost": "1 Adet Spotlight (Boost)",
@@ -45,15 +55,6 @@ PURCHASE_ITEM_PRICES_TRY = {
     "super_likes": "19.00",
     "swipes": "29.00",
 }
-
-
-def _apply_purchase(user: User, item_type: str, quantity: int) -> None:
-    if item_type == "boost":
-        user.boosts_balance += quantity
-    elif item_type == "super_likes":
-        user.extra_super_likes += quantity
-    elif item_type == "swipes":
-        user.bonus_swipe_credits += quantity * 50  # 50 extra swipes per package
 
 
 def _upload_validated_photo(file: UploadFile, storage: MediaStorage) -> str:
@@ -68,7 +69,8 @@ def _upload_validated_photo(file: UploadFile, storage: MediaStorage) -> str:
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large"
         ) from exc
 
-    return storage.upload(io.BytesIO(data), file.filename or "photo")
+    compressed = compress_image(data)
+    return storage.upload(io.BytesIO(compressed), "photo.jpg")
 
 
 @router.get("/me", response_model=UserRead)
@@ -135,13 +137,19 @@ def upload_profile_photo(
 
 
 @router.post("/me/media", status_code=status.HTTP_201_CREATED)
+@limiter.limit(messages_rate_limit)
 def upload_chat_media(
+    request: Request,
     file: UploadFile,
     current_user: User = Depends(get_current_user),
     storage: MediaStorage = Depends(get_media_storage),
 ) -> dict:
     url = _upload_validated_photo(file, storage)
     return {"url": url}
+
+
+_ALLOWED_VOICE_MIMES = {"audio/m4a", "audio/mp4", "audio/aac", "audio/mpeg", "audio/ogg", "audio/webm"}
+_MAX_VOICE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 @router.post("/me/voice-note", response_model=UserRead)
@@ -151,7 +159,19 @@ def upload_voice_note(
     db: Session = Depends(get_db),
     storage: MediaStorage = Depends(get_media_storage),
 ) -> User:
-    url = storage.upload(file.file, file.filename or "voice_note.m4a")
+    content_type = (file.content_type or "").lower().split(";")[0].strip()
+    if content_type not in _ALLOWED_VOICE_MIMES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported audio format",
+        )
+    data = file.file.read(_MAX_VOICE_BYTES + 1)
+    if len(data) > _MAX_VOICE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Voice note too large (max 5 MB)",
+        )
+    url = storage.upload(io.BytesIO(data), file.filename or "voice_note.m4a")
     current_user.voice_note_url = url
     db.commit()
     db.refresh(current_user)
@@ -206,7 +226,6 @@ def verify_user_photo(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    from app.services.vision_verification_service import verify_user_photo_with_vision
     return verify_user_photo_with_vision(db, current_user, payload.selfie_photo_url)
 
 
@@ -218,69 +237,13 @@ def get_ai_match_llm(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from app.services.llm_matching_service import generate_llm_kanka_synergy
     target_user = db.get(User, target_user_id)
     if target_user is None:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
     return generate_llm_kanka_synergy(current_user, target_user)
 
 
-ZODIAC_ELEMENTS = {
-    "Koç": "Fire", "Aslan": "Fire", "Yay": "Fire",
-    "Boğa": "Earth", "Başak": "Earth", "Oğlak": "Earth",
-    "İkizler": "Air", "Terazi": "Air", "Kova": "Air",
-    "Yengeç": "Water", "Akrep": "Water", "Balık": "Water"
-}
-
-ZODIAC_ELEMENT_SYNERGY = {
-    ("Fire", "Fire"): 1.0, ("Fire", "Air"): 1.0, ("Fire", "Earth"): 0.5, ("Fire", "Water"): 0.3,
-    ("Earth", "Earth"): 1.0, ("Earth", "Water"): 1.0, ("Earth", "Air"): 0.5, ("Earth", "Fire"): 0.5,
-    ("Air", "Air"): 1.0, ("Air", "Fire"): 1.0, ("Air", "Water"): 0.5, ("Air", "Earth"): 0.5,
-    ("Water", "Water"): 1.0, ("Water", "Earth"): 1.0, ("Water", "Fire"): 0.3, ("Water", "Air"): 0.5,
-}
-
-def calculate_ai_score(user_a: User, user_b: User) -> float:
-    # 1. Ortak Hobiler & Aktiviteler (%45 Ağırlık)
-    interests_a = user_a.interests or []
-    interests_b = user_b.interests or []
-    shared_interests = set(interests_a) & set(interests_b)
-    total_interests = set(interests_a) | set(interests_b)
-    interest_jaccard = len(shared_interests) / len(total_interests) if total_interests else 0.0
-
-    hobbies_a = user_a.hobbies or []
-    hobbies_b = user_b.hobbies or []
-    shared_hobbies = set(hobbies_a) & set(hobbies_b)
-    total_hobbies = set(hobbies_a) | set(hobbies_b)
-    hobby_jaccard = len(shared_hobbies) / len(total_hobbies) if total_hobbies else 0.0
-
-    if total_interests and total_hobbies:
-        combined_interest_hobby = 0.5 * interest_jaccard + 0.5 * hobby_jaccard
-    elif total_hobbies:
-        combined_interest_hobby = hobby_jaccard
-    else:
-        combined_interest_hobby = interest_jaccard
-    
-    interests_hobbies_score = combined_interest_hobby * 45.0
-
-    # 2. Astrolojik Element Sinerjisi (%25 Ağırlık)
-    zodiac_score = 10.0
-    if user_a.zodiac_sign and user_b.zodiac_sign:
-        el_a = ZODIAC_ELEMENTS.get(user_a.zodiac_sign)
-        el_b = ZODIAC_ELEMENTS.get(user_b.zodiac_sign)
-        if el_a and el_b:
-            synergy_ratio = ZODIAC_ELEMENT_SYNERGY.get((el_a, el_b), 0.5)
-            zodiac_score = synergy_ratio * 25.0
-
-    # 3. Mesafe ve Konum Analizi (%30 Ağırlık)
-    location_score = 15.0
-    has_coords = None not in (user_a.latitude, user_a.longitude, user_b.latitude, user_b.longitude)
-    if has_coords:
-        from app.core.geo import haversine_km
-        dist = haversine_km(user_a.latitude, user_a.longitude, user_b.latitude, user_b.longitude)
-        location_score = max(0.0, (1.0 - dist / 100.0) * 30.0)
-
-    total_score = interests_hobbies_score + zodiac_score + location_score
-    return round(min(99.0, max(50.0, total_score)), 1)
+_AI_RECOMMENDATION_CANDIDATE_POOL = 200
 
 
 @router.get("/me/ai-recommendations", response_model=list[AIRecommendation])
@@ -288,33 +251,29 @@ def get_ai_recommendations(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AIRecommendation]:
-    from app.models.swipe import Swipe
-    from app.services.safety_service import blocked_user_ids
-    
-    # Get user IDs already swiped on by the user
-    swiped_ids = {s.target_id for s in db.query(Swipe).filter(Swipe.swiper_id == current_user.id).all()}
-    # Get user IDs blocked by the user
+    swiped_ids = {
+        s.target_id
+        for s in db.query(Swipe.target_id).filter(Swipe.swiper_id == current_user.id).all()
+    }
     blocked_ids = set(blocked_user_ids(db, current_user.id))
-    
     exclude_ids = swiped_ids | blocked_ids | {current_user.id}
-    
+
     query = db.query(User).filter(User.is_active.is_(True))
     if exclude_ids:
         query = query.filter(User.id.not_in(exclude_ids))
-    candidates = query.all()
-    
-    results = []
-    for cand in candidates:
-        score = calculate_ai_score(current_user, cand)
-        results.append(
+    candidates = query.limit(_AI_RECOMMENDATION_CANDIDATE_POOL).all()
+
+    results = sorted(
+        [
             AIRecommendation(
                 user=UserRead.model_validate(cand),
-                match_score=round(score, 1)
+                match_score=RecommendationService.score_ai_recommendation(current_user, cand),
             )
-        )
-        
-    # Sort by match score in descending order
-    results.sort(key=lambda r: r.match_score, reverse=True)
+            for cand in candidates
+        ],
+        key=lambda r: r.match_score,
+        reverse=True,
+    )
     return results[:10]
 
 
@@ -328,9 +287,6 @@ def activate_boost(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    from datetime import datetime, timedelta
-    from app.services.subscription_service import is_premium
-    
     premium = is_premium(db, current_user.id)
     
     # Check if they have boosts balance or premium free daily boost
@@ -344,7 +300,7 @@ def activate_boost(
     if current_user.boosts_balance > 0:
         current_user.boosts_balance -= 1
     
-    current_user.boosted_until = datetime.utcnow() + timedelta(minutes=60)
+    current_user.boosted_until = utcnow() + timedelta(minutes=60)
     db.commit()
     db.refresh(current_user)
     return current_user
@@ -352,6 +308,7 @@ def activate_boost(
 
 @router.post("/me/purchase/checkout-session")
 def create_purchase_checkout_session(
+    request: Request,
     payload: PurchaseRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -373,9 +330,13 @@ def create_purchase_checkout_session(
         "secret_key": settings.iyzico_secret_key,
         "base_url": settings.iyzico_base_url,
     }
+    now = utcnow()
+    client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "0.0.0.0").split(",")[0].strip()
+    gsm = current_user.phone_number or "+905300000000"
+
     request_data = {
         "locale": "tr",
-        "conversationId": f"purchase_{payload.item_type}_{payload.quantity}_{current_user.id}_{int(datetime.utcnow().timestamp())}",
+        "conversationId": f"purchase_{payload.item_type}_{payload.quantity}_{current_user.id}_{int(now.timestamp())}",
         "price": price,
         "paidPrice": price,
         "currency": "TRY",
@@ -386,13 +347,13 @@ def create_purchase_checkout_session(
             "id": str(current_user.id),
             "name": current_user.display_name or "Buddy",
             "surname": "User",
-            "gsmNumber": "+905300000000",
+            "gsmNumber": gsm,
             "email": current_user.email,
-            "identityNumber": "11111111111",
-            "lastLoginDate": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            "registrationDate": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-            "registrationAddress": "Kadikoy, Istanbul",
-            "ip": "85.100.100.100",
+            "identityNumber": settings.iyzico_buyer_identity_number,
+            "lastLoginDate": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "registrationDate": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "registrationAddress": "Turkey",
+            "ip": client_ip,
             "city": "Istanbul",
             "country": "Turkey",
             "zipCode": "34700",
@@ -465,14 +426,14 @@ async def purchase_callback(
                 unit_price = PURCHASE_ITEM_PRICES_TRY.get(item_type)
                 expected_price = float(unit_price) * int(quantity) if unit_price else None
                 paid_price = str(checkout_form.get("paidPrice") or checkout_form.get("price") or "")
-                if expected_price and paid_price and float(paid_price) < expected_price:
+                if expected_price and paid_price and float(paid_price) < expected_price - _PRICE_TOLERANCE:
                     logger.warning(f"Price mismatch in store purchase callback: expected {expected_price}, got {paid_price}")
                     return responses.HTMLResponse(content="<html><body><h1>Ödeme Tutarı Geçersiz</h1></body></html>", status_code=400)
 
                 if claim_payment_callback(db, token, "purchase", int(user_id)):
                     user = db.get(User, int(user_id))
                     if user is not None:
-                        _apply_purchase(user, item_type, int(quantity))
+                        apply_purchase(user, item_type, int(quantity))
                         db.commit()
                 return responses.HTMLResponse(content=f"""
                     <html>
@@ -492,7 +453,7 @@ async def purchase_callback(
                     </html>
                 """)
 
-        error_msg = checkout_form.get("errorMessage") or "Ödeme tamamlanamadı."
+        error_msg = escape(checkout_form.get("errorMessage") or "Ödeme tamamlanamadı.")
         return responses.HTMLResponse(content=f"""
             <html>
                 <head>
@@ -516,7 +477,7 @@ async def purchase_callback(
             <html>
                 <body style="font-family: sans-serif; text-align: center; padding-top: 100px; background: #121212; color: #fff;">
                     <h1 style="color: #F44336;">❌ Bir Hata Oluştu</h1>
-                    <p>{str(exc)}</p>
+                    <p>{escape(str(exc))}</p>
                 </body>
             </html>
         """)

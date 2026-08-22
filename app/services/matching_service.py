@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -22,27 +22,27 @@ _LIKE_DIRECTIONS = (SwipeDirection.LIKE, SwipeDirection.SUPER_LIKE)
 
 
 def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> bool:
-    like_from_a = (
+    count = (
         db.query(Swipe)
         .filter(
-            Swipe.swiper_id == user_a_id,
-            Swipe.target_id == user_b_id,
-            Swipe.event_id == event_id,
-            Swipe.direction.in_(_LIKE_DIRECTIONS),
+            or_(
+                and_(
+                    Swipe.swiper_id == user_a_id,
+                    Swipe.target_id == user_b_id,
+                    Swipe.event_id == event_id,
+                    Swipe.direction.in_(_LIKE_DIRECTIONS),
+                ),
+                and_(
+                    Swipe.swiper_id == user_b_id,
+                    Swipe.target_id == user_a_id,
+                    Swipe.event_id == event_id,
+                    Swipe.direction.in_(_LIKE_DIRECTIONS),
+                ),
+            )
         )
-        .first()
+        .count()
     )
-    like_from_b = (
-        db.query(Swipe)
-        .filter(
-            Swipe.swiper_id == user_b_id,
-            Swipe.target_id == user_a_id,
-            Swipe.event_id == event_id,
-            Swipe.direction.in_(_LIKE_DIRECTIONS),
-        )
-        .first()
-    )
-    return like_from_a is not None and like_from_b is not None
+    return count == 2
 
 
 def _existing_match(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> Match | None:
@@ -121,15 +121,11 @@ def _distance_score(user_a: User, user_b: User) -> float:
     return max(0.0, 1 - distance_km / max_distance_km)
 
 
-def _calculate_score(db: Session, user_a_id: int, user_b_id: int) -> float:
-    user_a = db.get(User, user_a_id)
-    user_b = db.get(User, user_b_id)
+def _calculate_score(user_a: User, user_b: User) -> float:
     settings = get_settings()
-
     interest_part = settings.match_common_interest_weight * _interest_score(user_a, user_b)
     distance_part = settings.match_distance_weight * _distance_score(user_a, user_b)
     zodiac_part = 0.2 * _zodiac_score(user_a, user_b)
-
     return interest_part + distance_part + zodiac_part
 
 
@@ -141,11 +137,13 @@ def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int)
     if _existing_match(db, user_a_id, user_b_id, event_id) is not None:
         return None
 
+    user_a = db.get(User, user_a_id)
+    user_b = db.get(User, user_b_id)
     match = Match(
         event_id=event_id,
         user_a_id=user_a_id,
         user_b_id=user_b_id,
-        score=_calculate_score(db, user_a_id, user_b_id),
+        score=_calculate_score(user_a, user_b),
     )
     db.add(match)
     db.commit()
@@ -156,6 +154,24 @@ def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int)
 
 def _other_user_id(match: Match, user_id: int) -> int:
     return match.user_b_id if match.user_a_id == user_id else match.user_a_id
+
+
+class UnmatchNotFoundError(Exception):
+    pass
+
+
+class UnmatchForbiddenError(Exception):
+    pass
+
+
+def unmatch(db: Session, match_id: int, user_id: int) -> None:
+    match = db.get(Match, match_id)
+    if match is None:
+        raise UnmatchNotFoundError(match_id)
+    if user_id not in (match.user_a_id, match.user_b_id):
+        raise UnmatchForbiddenError(user_id)
+    match.is_active = False
+    db.commit()
 
 
 def list_matches_for_user(
@@ -175,15 +191,6 @@ def list_matches_for_user(
     return visible[skip : skip + limit]
 
 
-def _last_message(db: Session, match_id: int) -> Message | None:
-    return (
-        db.query(Message)
-        .filter(Message.match_id == match_id)
-        .order_by(Message.created_at.desc())
-        .first()
-    )
-
-
 def list_matches_with_details(
     db: Session, user_id: int, skip: int = 0, limit: int = 50
 ) -> list[tuple[Match, User, Message | None]]:
@@ -199,18 +206,27 @@ def list_matches_with_details(
     match_ids = [m.id for m in matches]
     last_messages_by_match_id: dict[int, Message] = {}
     if match_ids:
-        # DISTINCT ON (via .distinct(column)) is Postgres-only and is
-        # silently ignored on other dialects (e.g. SQLite in tests), which
-        # would leave the *oldest* message per match rather than the
-        # newest. Sorting ascending and letting later writes overwrite
-        # earlier ones in the dict is portable across every backend.
-        messages = (
-            db.query(Message)
+        latest_msg_subq = (
+            db.query(
+                Message.match_id,
+                func.max(Message.created_at).label("max_created_at"),
+            )
             .filter(Message.match_id.in_(match_ids))
-            .order_by(Message.created_at.asc())
+            .group_by(Message.match_id)
+            .subquery()
+        )
+        latest_messages = (
+            db.query(Message)
+            .join(
+                latest_msg_subq,
+                and_(
+                    Message.match_id == latest_msg_subq.c.match_id,
+                    Message.created_at == latest_msg_subq.c.max_created_at,
+                ),
+            )
             .all()
         )
-        for message in messages:
+        for message in latest_messages:
             last_messages_by_match_id[message.match_id] = message
 
     return [

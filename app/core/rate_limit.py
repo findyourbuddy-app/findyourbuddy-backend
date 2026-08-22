@@ -1,7 +1,15 @@
+from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.config import get_settings
+
+
+def get_real_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return get_remote_address(request)
 
 
 def default_rate_limit() -> str:
@@ -27,4 +35,4 @@ def ai_rate_limit() -> str:
     return f"{get_settings().rate_limit_ai_per_minute}/minute"
 
 
-limiter = Limiter(key_func=get_remote_address, default_limits=[default_rate_limit])
+limiter = Limiter(key_func=get_real_client_ip, default_limits=[default_rate_limit])

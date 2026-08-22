@@ -1,5 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
+from app.core.datetime_utils import utcnow
 
+from sqlalchemy import exists
 from sqlalchemy.orm import Session
 
 from app.models.bookmark import Bookmark
@@ -22,12 +24,7 @@ def create_bookmark(db: Session, user_id: int, event_id: int) -> Bookmark:
     if db.get(Event, event_id) is None:
         raise EventNotFoundError(event_id)
 
-    existing = (
-        db.query(Bookmark)
-        .filter(Bookmark.user_id == user_id, Bookmark.event_id == event_id)
-        .first()
-    )
-    if existing is not None:
+    if db.query(exists().where(Bookmark.user_id == user_id, Bookmark.event_id == event_id)).scalar():
         raise AlreadyBookmarkedError(event_id)
 
     bookmark = Bookmark(user_id=user_id, event_id=event_id)
@@ -61,6 +58,8 @@ def list_bookmarks(
         .limit(limit)
         .all()
     )
+    if not bookmarks:
+        return []
     events_by_id = {
         event.id: event
         for event in db.query(Event).filter(Event.id.in_([b.event_id for b in bookmarks])).all()
@@ -72,7 +71,7 @@ def delete_past_event_bookmarks(db: Session) -> int:
     """Saving an event to "remind me to go" stops making sense once it's
     already happened -- unlike attendance history, there's no reason to
     keep these around, so they're purged outright."""
-    expired_event_ids = db.query(Event.id).filter(Event.starts_at < datetime.utcnow())
+    expired_event_ids = db.query(Event.id).filter(Event.starts_at < utcnow())
     deleted_count = (
         db.query(Bookmark)
         .filter(Bookmark.event_id.in_(expired_event_ids))

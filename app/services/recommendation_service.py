@@ -1,3 +1,4 @@
+from app.core.geo import haversine_km
 from app.models.user import User
 
 ZODIAC_ELEMENTS = {
@@ -41,6 +42,41 @@ class RecommendationService:
         if not elem1 or not elem2:
             return 0.5
         return _ELEMENT_SYNERGY.get((elem1, elem2), 0.5)
+
+    @classmethod
+    def score_ai_recommendation(cls, user_a: User, user_b: User) -> float:
+        """Returns a 0-99 compatibility score for the AI recommendations endpoint.
+
+        Weights: interests+hobbies 45%, zodiac 25%, distance 30%.
+        Clamped to [50, 99] so every result feels like a positive match."""
+        interests_a = user_a.interests or []
+        interests_b = user_b.interests or []
+        hobbies_a = user_a.hobbies or []
+        hobbies_b = user_b.hobbies or []
+
+        interest_jaccard = cls.calculate_jaccard_similarity(interests_a, interests_b)
+        hobby_jaccard = cls.calculate_jaccard_similarity(hobbies_a, hobbies_b)
+
+        if interests_a and hobbies_a:
+            combined = 0.5 * interest_jaccard + 0.5 * hobby_jaccard
+        elif hobbies_a:
+            combined = hobby_jaccard
+        else:
+            combined = interest_jaccard
+        interests_hobbies_score = combined * 45.0
+
+        zodiac_score = 10.0
+        if user_a.zodiac_sign and user_b.zodiac_sign:
+            synergy = cls.calculate_zodiac_compatibility(user_a.zodiac_sign, user_b.zodiac_sign)
+            zodiac_score = synergy * 25.0
+
+        location_score = 15.0
+        if None not in (user_a.latitude, user_a.longitude, user_b.latitude, user_b.longitude):
+            dist = haversine_km(user_a.latitude, user_a.longitude, user_b.latitude, user_b.longitude)
+            location_score = max(0.0, (1.0 - dist / 100.0) * 30.0)
+
+        total = interests_hobbies_score + zodiac_score + location_score
+        return round(min(99.0, max(50.0, total)), 1)
 
     @classmethod
     def score_candidate(cls, swiper: User, candidate: User) -> float:

@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,16 +15,23 @@ class Settings(BaseSettings):
     iyzico_secret_key: str = "sandbox-dummy-secret-key"
     # HTTPSConnection takes a bare host, not a URL -- no scheme prefix here.
     iyzico_base_url: str = "sandbox-api.iyzipay.com"
+    iyzico_buyer_identity_number: str = "11111111111"
+    subscription_price_try: str = "99.00"
+
+    turn_urls: list[str] = []
+    turn_username: str = ""
+    turn_credential: str = ""
+
+    @field_validator("turn_urls", mode="before")
+    @classmethod
+    def _split_turn_urls(cls, value: str | list[str]) -> str | list[str]:
+        if isinstance(value, str):
+            return [u.strip() for u in value.split(",") if u.strip()]
+        return value
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 30
     jwt_refresh_expire_days: int = 30
-
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_username: str | None = None
-    smtp_password: str | None = None
-    smtp_sender: str = "noreply@findyourbuddy.com"
 
     daily_swipe_limit: int = 10
     daily_super_like_limit: int = 1
@@ -81,7 +88,7 @@ class Settings(BaseSettings):
 
     media_root: str = "media"
     media_base_url: str = "/media"
-    public_base_url: str = "http://127.0.0.1:8000"
+    public_base_url: str = ""
 
     # "local" (default, disk-backed) or "s3" (AWS S3 or an S3-compatible
     # provider like Cloudflare R2). The disk backend is fine for a single
@@ -97,6 +104,12 @@ class Settings(BaseSettings):
     # Public base URL files are served from -- a CDN domain, an R2 public
     # bucket URL, or an S3 bucket website endpoint.
     s3_public_url_base: str = ""
+
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
 
     push_provider: str = "logging"
     expo_push_api_url: str = "https://exp.host/--/api/v2/push/send"
@@ -118,6 +131,19 @@ class Settings(BaseSettings):
 
     geocoding_base_url: str = "https://nominatim.openstreetmap.org"
     geocoding_user_agent: str = "findyourbuddy-app/0.1 (contact@findyourbuddy.dev)"
+
+    @model_validator(mode="after")
+    def _check_production_secrets(self) -> "Settings":
+        if self.environment == "production":
+            if "sandbox" in self.iyzico_api_key or "dummy" in self.iyzico_api_key:
+                raise ValueError("iyzico_api_key must be a real production key in production environment")
+            if "sandbox" in self.iyzico_secret_key or "dummy" in self.iyzico_secret_key:
+                raise ValueError("iyzico_secret_key must be a real production key in production environment")
+            if "sandbox" in self.iyzico_base_url:
+                raise ValueError("iyzico_base_url must be the production endpoint in production environment")
+            if not self.public_base_url:
+                raise ValueError("public_base_url must be set in production environment")
+        return self
 
 
 @lru_cache

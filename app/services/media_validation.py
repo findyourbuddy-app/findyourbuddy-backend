@@ -5,6 +5,8 @@ from PIL import Image, UnidentifiedImageError
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8MB
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
+MAX_DIMENSION = 1600
+JPEG_QUALITY = 82
 
 
 class InvalidImageError(Exception):
@@ -26,12 +28,27 @@ def validate_image(file: BinaryIO) -> bytes:
         raise ImageTooLargeError(len(data))
 
     try:
-        image = Image.open(io.BytesIO(data))
-        image.verify()
+        # Open fresh buffer for verify(); verify() exhausts the image object
+        # so we must re-open separately to check the format afterwards.
+        Image.open(io.BytesIO(data)).verify()
+        fmt_image = Image.open(io.BytesIO(data))
     except UnidentifiedImageError as exc:
         raise InvalidImageError("Not a valid image file") from exc
 
-    if image.format not in ALLOWED_FORMATS:
-        raise InvalidImageError(f"Unsupported image format: {image.format}")
+    if fmt_image.format not in ALLOWED_FORMATS:
+        raise InvalidImageError(f"Unsupported image format: {fmt_image.format}")
 
     return data
+
+
+def compress_image(data: bytes) -> bytes:
+    """Downscales and re-encodes an already-validated image as JPEG so
+    uploads served to the app stay small and fast to load, regardless of
+    how large the original phone photo was. EXIF metadata is stripped."""
+    image = Image.open(io.BytesIO(data))
+    image = image.convert("RGB")
+    image.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.LANCZOS)
+
+    output = io.BytesIO()
+    image.save(output, format="JPEG", quality=JPEG_QUALITY, optimize=True, exif=b"")
+    return output.getvalue()

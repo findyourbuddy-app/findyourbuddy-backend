@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from app.core.datetime_utils import utcnow
 
 from sqlalchemy.orm import Session
 
@@ -13,7 +14,7 @@ def is_premium(db: Session, user_id: int) -> bool:
     subscription = get_subscription(db, user_id)
     if subscription is None or not subscription.is_active:
         return False
-    if subscription.expires_at is not None and subscription.expires_at < datetime.utcnow():
+    if subscription.expires_at is not None and subscription.expires_at < utcnow():
         return False
     return True
 
@@ -21,7 +22,7 @@ def is_premium(db: Session, user_id: int) -> bool:
 def premium_user_ids(db: Session, user_ids: list[int]) -> set[int]:
     if not user_ids:
         return set()
-    now = datetime.utcnow()
+    now = utcnow()
     rows = (
         db.query(Subscription.user_id)
         .filter(
@@ -38,13 +39,26 @@ def grant_premium(
     db: Session, user_id: int, expires_at: datetime | None = None, provider: str = "manual"
 ) -> Subscription:
     subscription = get_subscription(db, user_id)
+    now = utcnow()
     if subscription is None:
         subscription = Subscription(user_id=user_id)
         db.add(subscription)
+        subscription.started_at = now
+    else:
+        # Extend from current expiry if still active, otherwise start fresh
+        if (
+            subscription.is_active
+            and subscription.expires_at is not None
+            and expires_at is not None
+            and subscription.expires_at > now
+        ):
+            remaining = subscription.expires_at - now
+            expires_at = expires_at + remaining
+        else:
+            subscription.started_at = now
 
     subscription.is_active = True
     subscription.provider = provider
-    subscription.started_at = datetime.utcnow()
     subscription.expires_at = expires_at
     db.commit()
     db.refresh(subscription)

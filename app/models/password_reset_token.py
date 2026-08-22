@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -14,7 +14,7 @@ def _generate_token() -> str:
 
 
 def _default_expiry() -> datetime:
-    return datetime.utcnow() + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
+    return datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
 
 
 class PasswordResetToken(Base):
@@ -23,6 +23,6 @@ class PasswordResetToken(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     token: Mapped[str] = mapped_column(String(255), unique=True, index=True, default=_generate_token)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
     expires_at: Mapped[datetime] = mapped_column(default=_default_expiry)
     used_at: Mapped[datetime | None] = mapped_column(default=None)

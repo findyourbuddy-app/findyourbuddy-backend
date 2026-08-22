@@ -1,9 +1,10 @@
 import logging
 import secrets
 import string
-from datetime import datetime
+from datetime import datetime, timezone
+from app.core.datetime_utils import utcnow
 
-from sqlalchemy import or_
+from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
@@ -28,6 +29,10 @@ class InvalidCredentialsError(Exception):
     pass
 
 
+class AccountInactiveError(Exception):
+    pass
+
+
 class InvalidOrExpiredResetTokenError(Exception):
     pass
 
@@ -39,18 +44,18 @@ class IncorrectCurrentPasswordError(Exception):
 def _generate_referral_code(db: Session) -> str:
     while True:
         code = "".join(secrets.choice(_REFERRAL_CODE_ALPHABET) for _ in range(7))
-        if db.query(User).filter(User.referral_code == code).first() is None:
+        if not db.query(exists().where(User.referral_code == code)).scalar():
             return code
 
 
 def register_user(db: Session, data: UserCreate) -> User:
     normalized_email = data.email.strip().lower()
-    if db.query(User).filter(User.email == normalized_email).first() is not None:
+    if db.query(exists().where(User.email == normalized_email)).scalar():
         raise EmailAlreadyRegisteredError(normalized_email)
-    
+
     phone = data.phone_number.strip() if data.phone_number and data.phone_number.strip() else None
     if phone:
-        if db.query(User).filter(User.phone_number == phone).first() is not None:
+        if db.query(exists().where(User.phone_number == phone)).scalar():
             raise PhoneNumberAlreadyRegisteredError(phone)
     else:
         phone = f"unknown-{secrets.token_hex(6)}"
@@ -65,7 +70,7 @@ def register_user(db: Session, data: UserCreate) -> User:
         email=normalized_email,
         hashed_password=hash_password(data.password),
         display_name=data.display_name,
-        accepted_terms_at=datetime.utcnow(),
+        accepted_terms_at=utcnow(),
         referral_code=_generate_referral_code(db),
         referred_by_id=inviter.id if inviter is not None else None,
         bonus_swipe_credits=REFERRAL_BONUS_SWIPES if inviter is not None else 0,
@@ -85,8 +90,10 @@ def register_user(db: Session, data: UserCreate) -> User:
 def authenticate_user(db: Session, email: str, password: str) -> User:
     normalized_email = email.strip().lower()
     user = db.query(User).filter(User.email == normalized_email).first()
-    if user is None or not user.is_active or not verify_password(password, user.hashed_password):
+    if user is None or not verify_password(password, user.hashed_password):
         raise InvalidCredentialsError(normalized_email)
+    if not user.is_active:
+        raise AccountInactiveError(normalized_email)
     return user
 
 
@@ -108,13 +115,13 @@ def reset_password(db: Session, token: str, new_password: str) -> None:
     if (
         reset_token is None
         or reset_token.used_at is not None
-        or reset_token.expires_at < datetime.utcnow()
+        or reset_token.expires_at < utcnow()
     ):
         raise InvalidOrExpiredResetTokenError(token)
 
     user = db.get(User, reset_token.user_id)
     user.hashed_password = hash_password(new_password)
-    reset_token.used_at = datetime.utcnow()
+    reset_token.used_at = utcnow()
     db.commit()
 
 
@@ -133,7 +140,7 @@ def delete_expired_reset_tokens(db: Session) -> int:
         .filter(
             or_(
                 PasswordResetToken.used_at.is_not(None),
-                PasswordResetToken.expires_at < datetime.utcnow(),
+                PasswordResetToken.expires_at < utcnow().replace(tzinfo=None),
             )
         )
         .delete(synchronize_session=False)
@@ -181,17 +188,17 @@ def authenticate_or_create_firebase_user(db: Session, decoded_token: dict) -> Us
 
     # 4. Provision new user if not found
     fallback_email = email or f"{firebase_uid}@firebase.findyourbuddy.app"
-    fallback_phone = phone_number or f"+90500{firebase_uid[:8].lower()}"
+    fallback_phone = phone_number or f"firebase-{secrets.token_hex(8)}"
 
     new_user = User(
         email=fallback_email,
         phone_number=fallback_phone,
-        hashed_password=hash_password(f"firebase_{firebase_uid}"),
+        hashed_password=hash_password(secrets.token_hex(32)),
         display_name=display_name,
         firebase_uid=firebase_uid,
         phone_verified=True if phone_number is not None else False,
         referral_code=_generate_referral_code(db),
-        accepted_terms_at=datetime.utcnow(),
+        accepted_terms_at=utcnow(),
     )
     db.add(new_user)
     db.commit()

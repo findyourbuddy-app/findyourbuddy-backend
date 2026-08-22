@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_premium_user, get_current_user
@@ -6,10 +6,10 @@ from app.core.notifications import NotificationSender, get_notification_sender
 from app.database import get_db
 from app.models.swipe import SwipeDirection
 from app.models.user import User
-from app.schemas.swipe import SwipeCreate, SwipeQuota, SwipeRead
+from app.schemas.swipe import LikerRead, SwipeCreate, SwipeQuota, SwipeRead
 from app.schemas.user import UserPublic, UserRead
 from app.services.matching_service import try_create_match
-from app.services.notification_service import notify_match_created
+from app.services.notification_service import notify_match_created, notify_new_like
 from app.services.swipe_service import (
     BlockedUserError,
     DailySuperLikeLimitExceededError,
@@ -63,13 +63,7 @@ def create_swipe(
             match_id = match.id
             matched_user = UserPublic.model_validate(db.get(User, data.target_id))
         else:
-            from app.models.notification import Notification
-            db.add(Notification(
-                user_id=data.target_id,
-                title="Yeni Beğeni!",
-                body="Biri seni kanka olarak beğendi."
-            ))
-            db.commit()
+            notify_new_like(db, data.target_id)
 
     return SwipeRead.model_validate(swipe).model_copy(
         update={"match_id": match_id, "matched_user": matched_user}
@@ -103,16 +97,12 @@ def get_swipe_candidates(
     )
 
 
-from pydantic import BaseModel
-
-class LikerRead(BaseModel):
-    user: UserRead
-    event_id: int
-
 @router.get("/likes-received", response_model=list[LikerRead])
 def get_incoming_likes(
     event_id: int | None = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    return list_incoming_likes(db, event_id=event_id, user_id=current_user.id)
+    return list_incoming_likes(db, event_id=event_id, user_id=current_user.id, skip=skip, limit=limit)

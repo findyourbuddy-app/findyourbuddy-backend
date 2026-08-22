@@ -1,5 +1,5 @@
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -16,9 +16,9 @@ def _valid_png_bytes() -> bytes:
 def _register_and_login(client: TestClient, email: str) -> dict[str, str]:
     client.post(
         "/auth/register",
-        json={"email": email, "password": "s3cret-pass", "display_name": email, "accepted_terms": True, "phone_number": f"5{abs(hash(email)) % 10**9:09d}"},
+        json={"email": email, "password": "S3cret-pass", "display_name": email, "accepted_terms": True, "phone_number": f"5{abs(hash(email)) % 10**9:09d}"},
     )
-    response = client.post("/auth/login", json={"email": email, "password": "s3cret-pass"})
+    response = client.post("/auth/login", json={"email": email, "password": "S3cret-pass"})
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
@@ -32,7 +32,7 @@ def _create_event(client: TestClient, headers: dict[str, str]) -> int:
             "location_name": "Central Park",
             "latitude": 40.0,
             "longitude": -73.0,
-            "starts_at": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+            "starts_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
         },
     )
     return response.json()["id"]

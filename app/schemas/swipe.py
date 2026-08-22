@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from app.models.swipe import SwipeDirection
-from app.schemas.user import UserPublic
+from app.schemas.user import UserPublic, UserRead
 
 
 class SwipeCreate(BaseModel):
@@ -31,3 +31,8 @@ class SwipeQuota(BaseModel):
     swipe_limit: int | None
     super_likes_used_today: int
     super_like_limit: int
+
+
+class LikerRead(BaseModel):
+    user: UserRead
+    event_id: int

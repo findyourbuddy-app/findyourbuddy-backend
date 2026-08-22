@@ -7,9 +7,9 @@ from app.models.user import User
 def _register_and_login(client: TestClient, email: str) -> dict[str, str]:
     client.post(
         "/auth/register",
-        json={"email": email, "password": "s3cret-pass", "display_name": email, "accepted_terms": True, "phone_number": f"5{abs(hash(email)) % 10**9:09d}"},
+        json={"email": email, "password": "S3cret-pass", "display_name": email, "accepted_terms": True, "phone_number": f"5{abs(hash(email)) % 10**9:09d}"},
     )
-    response = client.post("/auth/login", json={"email": email, "password": "s3cret-pass"})
+    response = client.post("/auth/login", json={"email": email, "password": "S3cret-pass"})
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
@@ -107,6 +107,7 @@ def test_iyzico_callback_completed(client: TestClient, db_session: Session, monk
         {
             "status": "success",
             "paymentStatus": "SUCCESS",
+            "paidPrice": "99.00",
             "conversationId": f"sub_{user_id}_12345678",
         }
     ).encode("utf-8")

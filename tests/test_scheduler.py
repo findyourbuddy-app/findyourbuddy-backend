@@ -14,7 +14,7 @@ def test_run_cleanup_jobs_reports_deleted_counts(db_session: Session) -> None:
         db_session,
         UserCreate(
             email="ada@example.com",
-            password="s3cret-pass",
+            password="S3cret-pass",
             display_name="Ada",
             accepted_terms=True,
             phone_number="5000000001",
@@ -34,7 +34,7 @@ def test_run_cleanup_jobs_reports_deleted_counts(db_session: Session) -> None:
     )
     token = request_password_reset(db_session, "ada@example.com")
     assert token is not None
-    reset_password(db_session, token, "new-secret-pass")
+    reset_password(db_session, token, "NewSecret1!")
 
     result = run_cleanup_jobs(db_session)
 

@@ -1,6 +1,8 @@
 import secrets
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from app.core.datetime_utils import utcnow
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -8,6 +10,7 @@ from app.core.security import hash_password
 from app.models.user import User
 from app.models.user_photo import UserPhoto
 from app.schemas.user import UserUpdate
+from app.services.media_service import get_media_storage
 
 
 def _age_from_birth_date(birth_date: date, today: date | None = None) -> int:
@@ -36,24 +39,34 @@ def update_trust_suspensions(db: Session) -> int:
     settings = get_settings()
     threshold = settings.trust_score_suspension_threshold
     grace = timedelta(days=settings.trust_score_suspension_grace_days)
-    now = datetime.utcnow()
+    now = utcnow()
+    cutoff = now - grace
 
-    active_users = db.query(User).filter(User.is_active.is_(True)).all()
-    suspended = 0
-    for user in active_users:
-        if user.trust_score < threshold:
-            if user.trust_score_low_since is None:
-                user.trust_score_low_since = now
-            elif now - user.trust_score_low_since >= grace:
-                user.is_active = False
-                suspended += 1
-        elif user.trust_score_low_since is not None:
-            user.trust_score_low_since = None
+    # Mark the start of the low-trust window for users newly below threshold
+    db.execute(
+        update(User)
+        .where(User.is_active.is_(True), User.trust_score < threshold, User.trust_score_low_since.is_(None))
+        .values(trust_score_low_since=now)
+    )
+
+    # Suspend users that have been low for longer than the grace period
+    # token_version is incremented so existing JWT tokens are immediately invalidated
+    result = db.execute(
+        update(User)
+        .where(User.is_active.is_(True), User.trust_score < threshold, User.trust_score_low_since <= cutoff)
+        .values(is_active=False, token_version=User.token_version + 1)
+    )
+    suspended: int = result.rowcount
+
+    # Clear the low-since marker for users that recovered
+    db.execute(
+        update(User)
+        .where(User.is_active.is_(True), User.trust_score >= threshold, User.trust_score_low_since.is_not(None))
+        .values(trust_score_low_since=None)
+    )
+
     db.commit()
     return suspended
-
-
-from app.services.media_service import get_media_storage
 
 
 def delete_account(db: Session, user: User) -> None:
@@ -78,6 +91,7 @@ def delete_account(db: Session, user: User) -> None:
     db.query(UserPhoto).filter(UserPhoto.user_id == user.id).delete()
 
     user.is_active = False
+    user.token_version += 1
     user.email = f"deleted-user-{user.id}-{secrets.token_hex(4)}@findyourbuddy.invalid"
     user.phone_number = f"del-{secrets.token_hex(8)}"
     user.hashed_password = hash_password(secrets.token_urlsafe(32))

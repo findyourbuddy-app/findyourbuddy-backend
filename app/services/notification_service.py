@@ -1,9 +1,15 @@
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.notifications import NotificationSender
 from app.models.match import Match
 from app.models.message import Message
 from app.models.notification import Notification
+
+
+def notify_new_like(db: Session, target_user_id: int) -> None:
+    db.add(Notification(user_id=target_user_id, title="Yeni Beğeni!", body="Biri seni kanka olarak beğendi."))
+    db.commit()
 
 
 def notify_match_created(db: Session, sender: NotificationSender, match: Match) -> None:
@@ -37,15 +43,13 @@ def list_notifications(
 
 
 def mark_notifications_as_read(db: Session, user_id: int) -> int:
-    unread = (
-        db.query(Notification)
-        .filter(Notification.user_id == user_id, Notification.is_read.is_(False))
-        .all()
+    result = db.execute(
+        update(Notification)
+        .where(Notification.user_id == user_id, Notification.is_read.is_(False))
+        .values(is_read=True)
     )
-    for notification in unread:
-        notification.is_read = True
     db.commit()
-    return len(unread)
+    return result.rowcount
 
 
 def notify_photo_verification_result(

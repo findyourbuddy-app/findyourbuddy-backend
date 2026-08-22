@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, ConfigDict, field_validator
 from app.schemas.user import UserPublic
 from app.core.sanitizer import sanitize_text, validate_content_safety
@@ -29,6 +29,7 @@ class EventCreate(BaseModel):
         return cleaned
 
 
+
 class EventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,13 +55,12 @@ class EventRead(BaseModel):
     attendee_count: int = 0
     is_attending: bool = False
     is_checked_in: bool = False
-    is_ticket_verified: bool = False
 
 
 class EventPublicSummary(BaseModel):
     """Minimal, privacy-safe event summary shown on another user's profile
-    card (e.g. while swiping) -- deliberately excludes attendee lists,
-    tickets and other detail only relevant to actual attendees."""
+    card (e.g. while swiping) -- deliberately excludes attendee lists
+    and other detail only relevant to actual attendees."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,11 +75,6 @@ class EventCheckIn(BaseModel):
     latitude: float
     longitude: float
 
-
-class EventTicketRead(BaseModel):
-    ticket_image_url: str | None
-    ticket_decoded_text: str | None
-    is_ticket_verified: bool
 
 
 class EventCreationQuota(BaseModel):

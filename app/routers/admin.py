@@ -1,9 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import json
+import logging
+import os
+from html import escape
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_staff_user
 from app.database import get_db
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 from app.schemas.admin import UserActiveStatusUpdate
 from app.schemas.subscription import GrantPremiumRequest, SubscriptionStatus
 from app.schemas.user import UserRead
@@ -15,8 +23,8 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("/users", response_model=list[UserRead])
 def list_all_users(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
     _staff_user: User = Depends(get_current_staff_user),
     db: Session = Depends(get_db),
 ) -> list[User]:
@@ -31,7 +39,10 @@ def update_user_active_status(
     db: Session = Depends(get_db),
 ) -> User:
     try:
-        return set_user_active_status(db, user_id, data.is_active)
+        result = set_user_active_status(db, user_id, data.is_active)
+        action = "activated" if data.is_active else "suspended"
+        logger.info("admin_action action=%s target_user_id=%s actor_id=%s", action, user_id, _staff_user.id)
+        return result
     except UserNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found") from exc
 
@@ -44,6 +55,7 @@ def grant_user_premium(
     db: Session = Depends(get_db),
 ) -> SubscriptionStatus:
     grant_premium(db, user_id, expires_at=data.expires_at)
+    logger.info("admin_action action=grant_premium target_user_id=%s expires_at=%s actor_id=%s", user_id, data.expires_at, _staff_user.id)
     return SubscriptionStatus(is_premium=is_premium(db, user_id), expires_at=data.expires_at)
 
 
@@ -54,6 +66,7 @@ def revoke_user_premium(
     db: Session = Depends(get_db),
 ) -> SubscriptionStatus:
     revoke_premium(db, user_id)
+    logger.info("admin_action action=revoke_premium target_user_id=%s actor_id=%s", user_id, _staff_user.id)
     subscription = get_subscription(db, user_id)
     return SubscriptionStatus(
         is_premium=is_premium(db, user_id),
@@ -61,40 +74,39 @@ def revoke_user_premium(
     )
 
 
-from fastapi.responses import HTMLResponse
-import os
-
 @router.get("/logs", response_class=HTMLResponse)
 def get_logs(
     _staff_user: User = Depends(get_current_staff_user)
 ):
     """Renders the last 200 system log statements in a clean dark-themed dashboard."""
-    log_file = "app.log"
+    log_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "app.log")
     if not os.path.exists(log_file):
         return "<html><body style='background:#121214; color:#fff; text-align:center; padding-top:100px;'><h1>No logs found yet.</h1></body></html>"
-        
+
     try:
         with open(log_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
-            
+
         parsed_logs = []
         for line in reversed(lines[-200:]):
             try:
-                import json
                 parsed_logs.append(json.loads(line))
             except Exception:
                 parsed_logs.append({"timestamp": "", "level": "UNKNOWN", "logger": "root", "message": line})
-                
+
         rows = ""
         for log in parsed_logs:
-            level = log.get("level", "INFO")
+            level = escape(log.get("level", "INFO"))
             color = "#ff4d4d" if level in ("ERROR", "CRITICAL") else "#ffaa00" if level == "WARNING" else "#2eb82e" if level == "INFO" else "#8c8c96"
+            timestamp = escape(str(log.get("timestamp", "")))
+            logger_name = escape(str(log.get("logger", "")))
+            message = escape(str(log.get("message", "")))
             rows += f"""
                 <tr style="border-bottom: 1px solid #2e2e36;">
-                    <td style="padding: 10px; color: #8c8c96; white-space: nowrap;">{log.get("timestamp", "")}</td>
+                    <td style="padding: 10px; color: #8c8c96; white-space: nowrap;">{timestamp}</td>
                     <td style="padding: 10px;"><span style="color: {color}; font-weight: bold; font-size: 11px; border: 1px solid {color}; padding: 2px 6px; border-radius: 4px;">{level}</span></td>
-                    <td style="padding: 10px; color: #9b7bff;">{log.get("logger", "")}</td>
-                    <td style="padding: 10px; word-break: break-all;">{log.get("message", "")}</td>
+                    <td style="padding: 10px; color: #9b7bff;">{logger_name}</td>
+                    <td style="padding: 10px; word-break: break-all;">{message}</td>
                 </tr>
             """
             
