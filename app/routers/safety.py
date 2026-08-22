@@ -92,10 +92,12 @@ def report(
 def list_all_reports(
     status: ReportStatus | None = None,
     reported_user_id: int | None = None,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
     _staff_user: User = Depends(get_current_staff_user),
     db: Session = Depends(get_db),
 ) -> list[Report]:
-    return list_reports(db, status=status, reported_user_id=reported_user_id)
+    return list_reports(db, status=status, reported_user_id=reported_user_id, skip=skip, limit=limit)
 
 
 @router.patch("/reports/{report_id}", response_model=ReportRead)

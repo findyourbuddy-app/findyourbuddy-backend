@@ -20,7 +20,7 @@ class Event(Base):
     latitude: Mapped[float] = mapped_column()
     longitude: Mapped[float] = mapped_column()
     starts_at: Mapped[datetime] = mapped_column(index=True)
-    creator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None)
+    creator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
     source: Mapped[str | None] = mapped_column(String(50), default=None)
     external_id: Mapped[str | None] = mapped_column(String(255), default=None)
     source_url: Mapped[str | None] = mapped_column(String(500), default=None)

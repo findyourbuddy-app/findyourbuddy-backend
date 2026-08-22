@@ -1,6 +1,10 @@
+import json
 import logging
+import os
+from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_staff_user
@@ -70,17 +74,12 @@ def revoke_user_premium(
     )
 
 
-from fastapi.responses import HTMLResponse
-import os
-import json
-from html import escape
-
 @router.get("/logs", response_class=HTMLResponse)
 def get_logs(
     _staff_user: User = Depends(get_current_staff_user)
 ):
     """Renders the last 200 system log statements in a clean dark-themed dashboard."""
-    log_file = "app.log"
+    log_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "app.log")
     if not os.path.exists(log_file):
         return "<html><body style='background:#121214; color:#fff; text-align:center; padding-top:100px;'><h1>No logs found yet.</h1></body></html>"
 

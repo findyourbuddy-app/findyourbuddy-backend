@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from html import escape
 from app.core.datetime_utils import utcnow
 import json
 import logging
@@ -172,7 +173,7 @@ async def iyzico_callback(
                     </html>
                 """)
 
-        error_msg = checkout_form.get("errorMessage") or "Ödeme tamamlanamadı."
+        error_msg = escape(checkout_form.get("errorMessage") or "Ödeme tamamlanamadı.")
         return responses.HTMLResponse(content=f"""
             <html>
                 <head>

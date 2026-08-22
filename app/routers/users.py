@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+from html import escape
 from datetime import datetime, timedelta, timezone
 from app.core.datetime_utils import utcnow
 
@@ -455,7 +456,7 @@ async def purchase_callback(
                     </html>
                 """)
 
-        error_msg = checkout_form.get("errorMessage") or "Ödeme tamamlanamadı."
+        error_msg = escape(checkout_form.get("errorMessage") or "Ödeme tamamlanamadı.")
         return responses.HTMLResponse(content=f"""
             <html>
                 <head>
