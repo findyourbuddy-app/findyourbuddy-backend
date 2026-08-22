@@ -4,6 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import BinaryIO, Protocol
 
+import boto3
 from app.config import get_settings
 
 
@@ -54,8 +55,6 @@ class S3MediaStorage:
         secret_access_key: str,
         public_url_base: str,
     ) -> None:
-        import boto3
-
         self._bucket_name = bucket_name
         self._public_url_base = public_url_base.rstrip("/")
         self._client = boto3.client(
