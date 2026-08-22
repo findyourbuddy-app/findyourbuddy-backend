@@ -10,6 +10,7 @@ from app.core.security import hash_password
 from app.models.user import User
 from app.models.user_photo import UserPhoto
 from app.schemas.user import UserUpdate
+from app.services.media_service import get_media_storage
 
 
 def _age_from_birth_date(birth_date: date, today: date | None = None) -> int:
@@ -49,10 +50,11 @@ def update_trust_suspensions(db: Session) -> int:
     )
 
     # Suspend users that have been low for longer than the grace period
+    # token_version is incremented so existing JWT tokens are immediately invalidated
     result = db.execute(
         update(User)
         .where(User.is_active.is_(True), User.trust_score < threshold, User.trust_score_low_since <= cutoff)
-        .values(is_active=False)
+        .values(is_active=False, token_version=User.token_version + 1)
     )
     suspended: int = result.rowcount
 
@@ -65,9 +67,6 @@ def update_trust_suspensions(db: Session) -> int:
 
     db.commit()
     return suspended
-
-
-from app.services.media_service import get_media_storage
 
 
 def delete_account(db: Session, user: User) -> None:

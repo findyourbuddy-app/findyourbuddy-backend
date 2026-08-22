@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.core.deps import get_current_user
 from app.core.rate_limit import ai_rate_limit, limiter, messages_rate_limit
 from app.database import get_db
+from app.models.swipe import Swipe
 from app.models.user import User
 from app.models.user_photo import UserPhoto
 from app.schemas.device_token import DeviceTokenCreate, DeviceTokenRead
@@ -22,9 +23,13 @@ from app.schemas.user import UserRead, UserUpdate, AIRecommendation
 from app.schemas.user_photo import UserPhotoRead
 from app.services.device_token_service import register_device_token, unregister_device_token
 from app.services.export_service import export_user_data
+from app.services.llm_matching_service import generate_llm_kanka_synergy
 from app.services.media_service import MediaStorage, get_media_storage
 from app.services.media_validation import ImageTooLargeError, InvalidImageError, compress_image, validate_image
 from app.services.payment_service import apply_purchase, claim_payment_callback
+from app.services.recommendation_service import RecommendationService
+from app.services.safety_service import blocked_user_ids
+from app.services.subscription_service import is_premium
 from app.services.user_photo_service import (
     PhotoNotFoundError,
     TooManyPhotosError,
@@ -33,6 +38,7 @@ from app.services.user_photo_service import (
     remove_photo,
 )
 from app.services.user_service import delete_account, update_profile
+from app.services.vision_verification_service import verify_user_photo_with_vision
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["users"])
@@ -165,7 +171,6 @@ def upload_voice_note(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="Voice note too large (max 5 MB)",
         )
-    import io
     url = storage.upload(io.BytesIO(data), file.filename or "voice_note.m4a")
     current_user.voice_note_url = url
     db.commit()
@@ -221,7 +226,6 @@ def verify_user_photo(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    from app.services.vision_verification_service import verify_user_photo_with_vision
     return verify_user_photo_with_vision(db, current_user, payload.selfie_photo_url)
 
 
@@ -233,7 +237,6 @@ def get_ai_match_llm(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from app.services.llm_matching_service import generate_llm_kanka_synergy
     target_user = db.get(User, target_user_id)
     if target_user is None:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
@@ -248,10 +251,6 @@ def get_ai_recommendations(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AIRecommendation]:
-    from app.models.swipe import Swipe
-    from app.services.recommendation_service import RecommendationService
-    from app.services.safety_service import blocked_user_ids
-
     swiped_ids = {
         s.target_id
         for s in db.query(Swipe.target_id).filter(Swipe.swiper_id == current_user.id).all()
@@ -288,8 +287,6 @@ def activate_boost(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> User:
-    from app.services.subscription_service import is_premium
-    
     premium = is_premium(db, current_user.id)
     
     # Check if they have boosts balance or premium free daily boost
@@ -480,7 +477,7 @@ async def purchase_callback(
             <html>
                 <body style="font-family: sans-serif; text-align: center; padding-top: 100px; background: #121212; color: #fff;">
                     <h1 style="color: #F44336;">❌ Bir Hata Oluştu</h1>
-                    <p>{str(exc)}</p>
+                    <p>{escape(str(exc))}</p>
                 </body>
             </html>
         """)
