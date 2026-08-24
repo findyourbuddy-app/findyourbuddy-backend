@@ -177,7 +177,7 @@ def list_swipe_candidates(
 
     if is_group_or_system:
         attending_user_ids = db.query(EventAttendance.user_id).filter(
-            EventAttendance.event_id == event_id, EventAttendance.status == "approved"
+            EventAttendance.event_id == event_id, EventAttendance.status.in_(["approved", "pending"])
         )
         query = query.filter(User.id.in_(attending_user_ids))
 
