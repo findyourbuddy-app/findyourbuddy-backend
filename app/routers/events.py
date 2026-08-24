@@ -86,7 +86,7 @@ def list_all_events(
         else {}
     )
 
-    return [
+    res = [
         EventRead.model_validate(event).model_copy(
             update={
                 "attendee_count": attendee_counts.get(event.id, 0),
@@ -111,6 +111,9 @@ def list_all_events(
         )
         for event in events
     ]
+
+    res.sort(key=lambda e: not (e.is_attending or e.is_pending or e.creator_id == current_user.id))
+    return res
 
 
 @router.get("/me/attending", response_model=list[EventRead])
