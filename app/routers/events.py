@@ -523,6 +523,43 @@ def handle_join_request(
     )
 
 
+@router.post("/{event_id}/join-requests/approve-all", response_model=EventRead)
+def approve_all_join_requests(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventRead:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if event.creator_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only creator can manage join requests")
+
+    pending_attendances = (
+        db.query(EventAttendance)
+        .filter(EventAttendance.event_id == event_id, EventAttendance.status == "pending")
+        .all()
+    )
+
+    for attendance in pending_attendances:
+        attendance.status = "approved"
+        db.add(Notification(
+            user_id=attendance.user_id,
+            title="Grup Katılım Sonucu",
+            body=f"'{event.title}' grubuna katılım isteğin onaylandı 🎉."
+        ))
+
+    db.commit()
+
+    return EventRead.model_validate(event).model_copy(
+        update={
+            "attendee_count": count_attendees(db, event_id),
+            "is_attending": is_attending(db, event_id, current_user.id),
+            "is_pending": is_pending(db, event_id, current_user.id),
+        }
+    )
+
+
 @router.get("/{event_id}/attendees", response_model=list[UserRead])
 def get_event_attendees(
     event_id: int,
