@@ -69,6 +69,20 @@ def list_messages(
     skip: int = 0,
     limit: int = 50,
 ) -> list[Message]:
+    match = db.get(Match, match_id)
+    if match is None:
+        raise MatchNotFoundError(match_id)
+    if match.event_id:
+        group_match_ids = [m.id for m in db.query(Match.id).filter(Match.event_id == match.event_id).all()]
+        return (
+            db.query(Message)
+            .filter(Message.match_id.in_(group_match_ids))
+            .order_by(Message.created_at)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
     _get_match_for_participant(db, match_id, requester_id)
     return (
         db.query(Message)
@@ -81,6 +95,21 @@ def list_messages(
 
 
 def mark_messages_as_read(db: Session, match_id: int, reader_id: int) -> int:
+    match = db.get(Match, match_id)
+    if match and match.event_id:
+        group_match_ids = [m.id for m in db.query(Match.id).filter(Match.event_id == match.event_id).all()]
+        result = db.execute(
+            update(Message)
+            .where(
+                Message.match_id.in_(group_match_ids),
+                Message.sender_id != reader_id,
+                Message.is_read.is_(False),
+            )
+            .values(is_read=True)
+        )
+        db.commit()
+        return result.rowcount
+
     _get_match_for_participant(db, match_id, reader_id)
     result = db.execute(
         update(Message)

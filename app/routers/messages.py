@@ -90,9 +90,21 @@ def post_message(
         ) from exc
 
     match = db.get(Match, match_id)
-    recipient_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
-    notify_new_message(db, notification_sender, message, recipient_id)
-    _relay_to_firestore(match_id, message)
+    if match and match.event_id:
+        group_matches = db.query(Match).filter(Match.event_id == match.event_id).all()
+        recipient_ids = set()
+        for gm in group_matches:
+            if gm.user_a_id != current_user.id:
+                recipient_ids.add(gm.user_a_id)
+            if gm.user_b_id != current_user.id:
+                recipient_ids.add(gm.user_b_id)
+        for rid in recipient_ids:
+            notify_new_message(db, notification_sender, message, rid)
+        _relay_to_firestore(match_id, message)
+    elif match:
+        recipient_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
+        notify_new_message(db, notification_sender, message, recipient_id)
+        _relay_to_firestore(match_id, message)
 
     return message
 
