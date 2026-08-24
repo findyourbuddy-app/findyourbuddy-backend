@@ -30,6 +30,7 @@ def check_database_status(db: Session = Depends(get_db)) -> JSONResponse:
 
 
 @router.get("/metrics", response_class=PlainTextResponse)
+@router.get("/monitoring/metrics", response_class=PlainTextResponse)
 def prometheus_metrics(db: Session = Depends(get_db)) -> str:
     """Exports comprehensive Prometheus-compatible metrics for system health,
     domain statistics, user analytics, external API usage, and cloud cost metrics."""
@@ -60,9 +61,9 @@ def prometheus_metrics(db: Session = Depends(get_db)) -> str:
         attendance_count = db.execute(text("SELECT count(*) FROM event_attendances")).scalar() or 0
 
         swipe_count = db.execute(text("SELECT count(*) FROM swipes")).scalar() or 0
-        like_count = db.execute(text("SELECT count(*) FROM swipes WHERE action = 'like'")).scalar() or 0
-        pass_count = db.execute(text("SELECT count(*) FROM swipes WHERE action = 'pass'")).scalar() or 0
-        superlike_count = db.execute(text("SELECT count(*) FROM swipes WHERE action = 'superlike'")).scalar() or 0
+        like_count = db.execute(text("SELECT count(*) FROM swipes WHERE direction = 'like'")).scalar() or 0
+        pass_count = db.execute(text("SELECT count(*) FROM swipes WHERE direction = 'pass'")).scalar() or 0
+        superlike_count = db.execute(text("SELECT count(*) FROM swipes WHERE direction IN ('superlike', 'super_like')")).scalar() or 0
 
         match_count = db.execute(text("SELECT count(*) FROM matches")).scalar() or 0
         message_count = db.execute(text("SELECT count(*) FROM messages")).scalar() or 0
