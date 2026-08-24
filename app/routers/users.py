@@ -149,8 +149,24 @@ def upload_chat_media(
     return {"url": url}
 
 
-_ALLOWED_VOICE_MIMES = {"audio/m4a", "audio/mp4", "audio/aac", "audio/mpeg", "audio/ogg", "audio/webm"}
-_MAX_VOICE_BYTES = 5 * 1024 * 1024  # 5 MB
+_ALLOWED_VOICE_MIMES = {
+    "audio/m4a",
+    "audio/x-m4a",
+    "audio/mp4",
+    "audio/aac",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/ogg",
+    "audio/webm",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/3gpp",
+    "audio/amr",
+    "audio/caf",
+    "application/octet-stream",
+}
+_ALLOWED_VOICE_EXTS = {".m4a", ".mp3", ".wav", ".aac", ".caf", ".ogg", ".webm", ".3gp", ".mp4"}
+_MAX_VOICE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 @router.post("/me/voice-note", response_model=UserRead)
@@ -161,7 +177,10 @@ def upload_voice_note(
     storage: MediaStorage = Depends(get_media_storage),
 ) -> User:
     content_type = (file.content_type or "").lower().split(";")[0].strip()
-    if content_type not in _ALLOWED_VOICE_MIMES:
+    filename = (file.filename or "voice_note.m4a").lower()
+    ext = "." + filename.split(".")[-1] if "." in filename else ".m4a"
+
+    if content_type not in _ALLOWED_VOICE_MIMES and ext not in _ALLOWED_VOICE_EXTS:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Unsupported audio format",
@@ -170,7 +189,7 @@ def upload_voice_note(
     if len(data) > _MAX_VOICE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Voice note too large (max 5 MB)",
+            detail="Voice note too large (max 10 MB)",
         )
     url = storage.upload(io.BytesIO(data), file.filename or "voice_note.m4a")
     current_user.voice_note_url = url
