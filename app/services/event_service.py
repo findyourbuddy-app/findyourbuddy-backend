@@ -84,7 +84,8 @@ def list_events(
     if category is not None:
         query = query.filter(Event.category == category)
     if upcoming_only:
-        query = query.filter(Event.starts_at >= utcnow())
+        six_hours_ago = utcnow() - timedelta(hours=6)
+        query = query.filter(Event.starts_at >= six_hours_ago)
     # Filtering "user" origin client-side over a date-sorted page would only
     # ever see user events once enough system events (there can be
     # thousands) have scrolled past chronologically -- do it in the query.
@@ -202,7 +203,8 @@ def list_attending_events(db: Session, user_id: int, upcoming_only: bool = True)
         .filter(EventAttendance.user_id == user_id, EventAttendance.status == "approved")
     )
     if upcoming_only:
-        query = query.filter(Event.starts_at >= utcnow())
+        six_hours_ago = utcnow() - timedelta(hours=6)
+        query = query.filter(Event.starts_at >= six_hours_ago)
     return query.order_by(Event.starts_at).all()
 
 

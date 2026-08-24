@@ -162,6 +162,35 @@ def read_my_attending_events(
     ]
 
 
+@router.get("/me/created", response_model=list[EventRead])
+def read_my_created_events(
+    upcoming_only: bool = True,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[EventRead]:
+    query = db.query(Event).filter(Event.creator_id == current_user.id)
+    if upcoming_only:
+        six_hours_ago = utcnow() - timedelta(hours=6)
+        query = query.filter(Event.starts_at >= six_hours_ago)
+    events = query.order_by(Event.starts_at.desc()).all()
+    if not events:
+        return []
+
+    event_ids = [e.id for e in events]
+    attendee_counts = count_attendees_bulk(db, event_ids)
+
+    return [
+        EventRead.model_validate(event).model_copy(
+            update={
+                "attendee_count": attendee_counts.get(event.id, 0),
+                "is_attending": True,
+                "creator": UserPublic.model_validate(current_user),
+            }
+        )
+        for event in events
+    ]
+
+
 @router.get("/user/{user_id}/upcoming", response_model=list[EventPublicSummary])
 def read_user_upcoming_events(
     user_id: int,
