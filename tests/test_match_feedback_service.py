@@ -92,7 +92,7 @@ def test_submit_feedback_true_increments_rated_user_trust_score(db_session: Sess
 
     submit_feedback(db_session, match_id, user_a, True)
 
-    assert db_session.get(User, user_b).trust_score == 1
+    assert db_session.get(User, user_b).trust_score == 51
 
 
 def test_submit_feedback_false_does_not_increment_trust_score(db_session: Session) -> None:
@@ -100,7 +100,7 @@ def test_submit_feedback_false_does_not_increment_trust_score(db_session: Sessio
 
     submit_feedback(db_session, match_id, user_a, False)
 
-    assert db_session.get(User, user_b).trust_score == 0
+    assert db_session.get(User, user_b).trust_score == 50
 
 
 def test_submit_feedback_marks_needs_feedback_false(db_session: Session) -> None:
@@ -119,7 +119,7 @@ def test_submit_feedback_twice_does_not_double_count_trust_score(db_session: Ses
     submit_feedback(db_session, match_id, user_a, True)
     submit_feedback(db_session, match_id, user_a, True)
 
-    assert db_session.get(User, user_b).trust_score == 1
+    assert db_session.get(User, user_b).trust_score == 51
 
 
 def test_send_pending_feedback_notifications_notifies_both_participants_once(

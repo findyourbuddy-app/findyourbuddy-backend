@@ -14,4 +14,6 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text)
     is_read: Mapped[bool] = mapped_column(default=False)
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("events.id"), default=None, nullable=True)
+    match_id: Mapped[int | None] = mapped_column(ForeignKey("matches.id"), default=None, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), index=True)

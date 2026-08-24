@@ -10,6 +10,8 @@ class NotificationRead(BaseModel):
     title: str
     body: str
     is_read: bool
+    event_id: int | None = None
+    match_id: int | None = None
     created_at: datetime
 
 

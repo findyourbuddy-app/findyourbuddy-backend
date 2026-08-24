@@ -7,6 +7,7 @@ from app.core.datetime_utils import utcnow
 import iyzipay
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, responses, status
 from pydantic import BaseModel
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -15,6 +16,7 @@ from app.core.rate_limit import event_writes_rate_limit, limiter
 from app.database import get_db
 from app.models.event import Event
 from app.models.event_attendance import EventAttendance
+from app.models.match import Match
 from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.event import EventCheckIn, EventCreate, EventCreationQuota, EventPublicSummary, EventRead
@@ -443,11 +445,12 @@ def attend_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     attendance = join_event(db, event_id, current_user.id)
     
-    if event.is_group_event and event.creator_id:
+    if event.creator_id and event.creator_id != current_user.id:
         db.add(Notification(
             user_id=event.creator_id,
             title="Yeni Katılım İsteği!",
-            body=f"{current_user.display_name}, '{event.title}' etkinliğine katılmak istiyor."
+            body=f"{current_user.display_name}, '{event.title}' etkinliğine katılmak istiyor.",
+            event_id=event.id,
         ))
         db.commit()
 
@@ -536,13 +539,32 @@ def handle_join_request(
     if attendance is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attendance request not found")
 
-    attendance.status = "approved" if data.approved else "rejected"
+    if data.approved:
+        attendance.status = "approved"
+        existing_match = db.query(Match).filter(
+            Match.event_id == event_id,
+            or_(
+                and_(Match.user_a_id == current_user.id, Match.user_b_id == user_id),
+                and_(Match.user_a_id == user_id, Match.user_b_id == current_user.id),
+            )
+        ).first()
+        if not existing_match:
+            db.add(Match(
+                event_id=event_id,
+                user_a_id=current_user.id,
+                user_b_id=user_id,
+                score=1.0,
+                is_active=True,
+            ))
+    else:
+        attendance.status = "rejected"
 
-    status_label = "onaylandı 🎉" if data.approved else "reddedildi"
+    status_label = "onaylandı" if data.approved else "reddedildi"
     db.add(Notification(
         user_id=user_id,
         title="Grup Katılım Sonucu",
-        body=f"'{event.title}' grubuna katılım isteğin {status_label}."
+        body=f"'{event.title}' grubuna katılım isteğin {status_label}.",
+        event_id=event.id,
     ))
     db.commit()
 
@@ -575,10 +597,26 @@ def approve_all_join_requests(
 
     for attendance in pending_attendances:
         attendance.status = "approved"
+        existing_match = db.query(Match).filter(
+            Match.event_id == event_id,
+            or_(
+                and_(Match.user_a_id == current_user.id, Match.user_b_id == attendance.user_id),
+                and_(Match.user_a_id == attendance.user_id, Match.user_b_id == current_user.id),
+            )
+        ).first()
+        if not existing_match:
+            db.add(Match(
+                event_id=event_id,
+                user_a_id=current_user.id,
+                user_b_id=attendance.user_id,
+                score=1.0,
+                is_active=True,
+            ))
         db.add(Notification(
             user_id=attendance.user_id,
             title="Grup Katılım Sonucu",
-            body=f"'{event.title}' grubuna katılım isteğin onaylandı 🎉."
+            body=f"'{event.title}' grubuna katılım isteğin onaylandı.",
+            event_id=event.id,
         ))
 
     db.commit()

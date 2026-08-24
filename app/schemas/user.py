@@ -12,7 +12,7 @@ class UserPublic(BaseModel):
     id: int
     display_name: str
     photo_url: str | None = None
-    trust_score: int = 0
+    trust_score: int = 50
     university: str | None = None
     is_verified: bool = False
 
@@ -83,7 +83,7 @@ class UserRead(BaseModel):
     accepted_terms_at: datetime | None = None
     created_at: datetime
     photos: list[UserPhotoRead] = []
-    trust_score: int = 0
+    trust_score: int = 50
     referral_code: str
     bonus_swipe_credits: int = 0
     boosted_until: datetime | None = None

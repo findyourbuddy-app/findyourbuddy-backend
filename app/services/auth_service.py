@@ -76,6 +76,7 @@ def register_user(db: Session, data: UserCreate) -> User:
         bonus_swipe_credits=REFERRAL_BONUS_SWIPES if inviter is not None else 0,
         phone_number=phone,
         phone_verified=False,
+        trust_score=50,
         hobbies=[],
     )
     db.add(user)

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_premium_user, get_current_user
 from app.core.notifications import NotificationSender, get_notification_sender
 from app.database import get_db
-from app.models.swipe import SwipeDirection
+from app.models.swipe import Swipe, SwipeDirection
 from app.models.user import User
 from app.schemas.swipe import LikerRead, SwipeCreate, SwipeQuota, SwipeRead
 from app.schemas.user import UserPublic, UserRead
