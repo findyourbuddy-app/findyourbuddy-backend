@@ -69,6 +69,8 @@ def list_my_matches(
             event_id=match.event_id,
             event_title=match.event.title if match.event else None,
             event_category=match.event.category if match.event else None,
+            event_is_group=match.event.is_group_event if match.event else False,
+            event_creator_id=match.event.creator_id if match.event else None,
             user_a_id=match.user_a_id,
             user_b_id=match.user_b_id,
             score=match.score,
