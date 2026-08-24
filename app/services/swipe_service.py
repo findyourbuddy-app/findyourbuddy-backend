@@ -129,6 +129,7 @@ def list_swipe_candidates(
     zodiac_sign: str | None = None,
     is_verified_only: bool | None = None,
     has_voice_note: bool | None = None,
+    min_trust_score: int | None = None,
 ) -> list[User]:
     swiper = db.get(User, swiper_id)
     if swiper is None:
@@ -143,6 +144,7 @@ def list_swipe_candidates(
         and zodiac_sign is None
         and not is_verified_only
         and not has_voice_note
+        and min_trust_score is None
     )
     
     if is_default_query:
@@ -153,7 +155,7 @@ def list_swipe_candidates(
             return [user_map[uid] for uid in cached_ids if uid in user_map]
 
     if not is_premium(db, swiper_id):
-        min_age = max_age = max_distance_km = gender_preference = university = zodiac_sign = None
+        min_age = max_age = max_distance_km = gender_preference = university = zodiac_sign = min_trust_score = None
         is_verified_only = has_voice_note = False
 
     event = db.get(Event, event_id)
@@ -194,6 +196,8 @@ def list_swipe_candidates(
         query = query.filter(User.is_verified.is_(True))
     if has_voice_note:
         query = query.filter(User.voice_note_url.is_not(None))
+    if min_trust_score is not None and min_trust_score > 0:
+        query = query.filter(User.trust_score >= min_trust_score)
 
     candidates = query.all()
 

@@ -99,6 +99,7 @@ def get_swipe_candidates(
     zodiac_sign: str | None = None,
     is_verified_only: bool | None = None,
     has_voice_note: bool | None = None,
+    min_trust_score: int | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[UserRead]:
@@ -114,6 +115,7 @@ def get_swipe_candidates(
         zodiac_sign=zodiac_sign,
         is_verified_only=is_verified_only,
         has_voice_note=has_voice_note,
+        min_trust_score=min_trust_score,
     )
     event_titles = get_upcoming_own_event_titles(db, [c.id for c in candidates])
     return [
