@@ -1,6 +1,7 @@
 from app.models.block import Block
 from app.models.bookmark import Bookmark
 from app.models.device_token import DeviceToken
+from app.models.double_buddy import DoubleBuddy
 from app.models.event import Event
 from app.models.event_attendance import EventAttendance
 from app.models.match import Match
@@ -19,6 +20,7 @@ __all__ = [
     "Block",
     "Bookmark",
     "DeviceToken",
+    "DoubleBuddy",
     "Event",
     "EventAttendance",
     "Match",

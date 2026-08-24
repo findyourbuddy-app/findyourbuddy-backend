@@ -1,7 +1,9 @@
 import io
 from typing import BinaryIO
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageFile, ImageOps, UnidentifiedImageError
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8MB
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
@@ -32,7 +34,7 @@ def validate_image(file: BinaryIO) -> bytes:
         # so we must re-open separately to check the format afterwards.
         Image.open(io.BytesIO(data)).verify()
         fmt_image = Image.open(io.BytesIO(data))
-    except UnidentifiedImageError as exc:
+    except (UnidentifiedImageError, OSError) as exc:
         raise InvalidImageError("Not a valid image file") from exc
 
     if fmt_image.format not in ALLOWED_FORMATS:
@@ -42,13 +44,14 @@ def validate_image(file: BinaryIO) -> bytes:
 
 
 def compress_image(data: bytes) -> bytes:
-    """Downscales and re-encodes an already-validated image as JPEG so
-    uploads served to the app stay small and fast to load, regardless of
-    how large the original phone photo was. EXIF metadata is stripped."""
     image = Image.open(io.BytesIO(data))
+    try:
+        image = ImageOps.exif_transpose(image)
+    except Exception:
+        pass
     image = image.convert("RGB")
     image.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.LANCZOS)
 
     output = io.BytesIO()
-    image.save(output, format="JPEG", quality=JPEG_QUALITY, optimize=True, exif=b"")
+    image.save(output, format="JPEG", quality=JPEG_QUALITY, optimize=True)
     return output.getvalue()

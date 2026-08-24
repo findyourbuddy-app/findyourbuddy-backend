@@ -31,6 +31,7 @@ from app.services.event_service import (
     get_event,
     grant_event_credits,
     is_attending,
+    is_pending,
     is_checked_in,
     is_ticket_verified,
     join_event,
@@ -92,6 +93,10 @@ def list_all_events(
                 "is_attending": (
                     user_attendances.get(event.id) is not None
                     and user_attendances[event.id].status == "approved"
+                ),
+                "is_pending": (
+                    user_attendances.get(event.id) is not None
+                    and user_attendances[event.id].status == "pending"
                 ),
                 "is_checked_in": (
                     user_attendances.get(event.id) is not None
@@ -354,6 +359,7 @@ def read_event(
         update={
             "attendee_count": count_attendees(db, event_id),
             "is_attending": is_attending(db, event_id, current_user.id),
+            "is_pending": is_pending(db, event_id, current_user.id),
             "is_checked_in": is_checked_in(db, event_id, current_user.id),
             "is_ticket_verified": is_ticket_verified(db, event_id, current_user.id),
             "creator": UserPublic.model_validate(creator) if creator else None,
@@ -417,6 +423,7 @@ def attend_event(
         update={
             "attendee_count": count_attendees(db, event_id),
             "is_attending": attendance.status == "approved",
+            "is_pending": attendance.status == "pending",
             "is_checked_in": attendance.checked_in_at is not None,
             "is_ticket_verified": attendance.ticket_verified_at is not None,
         }
@@ -511,6 +518,7 @@ def handle_join_request(
         update={
             "attendee_count": count_attendees(db, event_id),
             "is_attending": is_attending(db, event_id, current_user.id),
+            "is_pending": is_pending(db, event_id, current_user.id),
         }
     )
 

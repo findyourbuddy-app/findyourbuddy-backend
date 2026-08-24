@@ -59,6 +59,7 @@ PURCHASE_ITEM_PRICES_TRY = {
 
 def _upload_validated_photo(file: UploadFile, storage: MediaStorage) -> str:
     try:
+        file.file.seek(0)
         data = validate_image(file.file)
     except InvalidImageError as exc:
         raise HTTPException(

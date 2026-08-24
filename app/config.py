@@ -110,6 +110,7 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_from_email: str = ""
+    admin_alert_email: str = ""
 
     push_provider: str = "logging"
     expo_push_api_url: str = "https://exp.host/--/api/v2/push/send"

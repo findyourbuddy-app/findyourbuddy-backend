@@ -62,6 +62,7 @@ class UserRead(BaseModel):
     date_of_birth: date | None = None
     occupation: str | None = None
     university: str | None = None
+    class_year: str | None = None
     zodiac_sign: str | None = None
     gender: str | None = None
     height: int | None = None
@@ -92,6 +93,7 @@ class UserRead(BaseModel):
     phone_number: str | None = None
     phone_verified: bool = False
     is_verified: bool = False
+    event_title: str | None = None
 
 
 class UserUpdate(BaseModel):
@@ -99,6 +101,7 @@ class UserUpdate(BaseModel):
     date_of_birth: date | None = None
     occupation: str | None = None
     university: str | None = None
+    class_year: str | None = None
     zodiac_sign: str | None = None
     gender: str | None = None
     height: int | None = None

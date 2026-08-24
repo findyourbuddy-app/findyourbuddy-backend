@@ -26,6 +26,7 @@ class User(Base):
     date_of_birth: Mapped[date | None] = mapped_column(default=None)
     occupation: Mapped[str | None] = mapped_column(String(100), default=None)
     university: Mapped[str | None] = mapped_column(String(150), default=None)
+    class_year: Mapped[str | None] = mapped_column(String(30), default=None)
     zodiac_sign: Mapped[str | None] = mapped_column(String(50), default=None)
     gender: Mapped[str | None] = mapped_column(String(30), default=None)
     height: Mapped[int | None] = mapped_column(default=None)

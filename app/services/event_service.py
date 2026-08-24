@@ -216,6 +216,16 @@ def is_attending(db: Session, event_id: int, user_id: int) -> bool:
     ).scalar()
 
 
+def is_pending(db: Session, event_id: int, user_id: int) -> bool:
+    return db.query(
+        exists().where(
+            EventAttendance.event_id == event_id,
+            EventAttendance.user_id == user_id,
+            EventAttendance.status == "pending",
+        )
+    ).scalar()
+
+
 def count_attendees(db: Session, event_id: int) -> int:
     return (
         db.query(EventAttendance)

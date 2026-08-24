@@ -54,6 +54,7 @@ class EventRead(BaseModel):
     created_at: datetime
     attendee_count: int = 0
     is_attending: bool = False
+    is_pending: bool = False
     is_checked_in: bool = False
 
 

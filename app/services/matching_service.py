@@ -99,6 +99,53 @@ def _zodiac_score(user_a: User, user_b: User) -> float:
     return _ELEMENT_SYNERGY.get((elem1, elem2), 0.5)
 
 
+def _language_score(user_a: User, user_b: User) -> float:
+    langs_a = user_a.languages_spoken or []
+    langs_b = user_b.languages_spoken or []
+    if not langs_a or not langs_b:
+        return 0.0
+    shared = set(langs_a) & set(langs_b)
+    union = set(langs_a) | set(langs_b)
+    return len(shared) / len(union) if union else 0.0
+
+
+def _looking_for_score(user_a: User, user_b: User) -> float:
+    lf_a = (user_a.looking_for or "").strip().lower()
+    lf_b = (user_b.looking_for or "").strip().lower()
+    if not lf_a or not lf_b:
+        return 0.0
+    if lf_a == lf_b:
+        return 1.0
+    words_a = set(lf_a.split())
+    words_b = set(lf_b.split())
+    overlap = words_a & words_b
+    return len(overlap) / max(len(words_a), len(words_b)) if overlap else 0.3
+
+
+def _academic_score(user_a: User, user_b: User) -> float:
+    score = 0.0
+    u1 = (user_a.university or "").strip().lower()
+    u2 = (user_b.university or "").strip().lower()
+    if u1 and u2 and u1 == u2:
+        score += 0.7
+    c1 = (user_a.class_year or "").strip().lower()
+    c2 = (user_b.class_year or "").strip().lower()
+    if c1 and c2 and c1 == c2:
+        score += 0.3
+    return min(1.0, score)
+
+
+def _worldview_score(user_a: User, user_b: User) -> float:
+    score = 0.0
+    p1, p2 = user_a.political_views, user_b.political_views
+    if p1 and p2 and p1 == p2:
+        score += 0.5
+    b1, b2 = user_a.beliefs, user_b.beliefs
+    if b1 and b2 and b1 == b2:
+        score += 0.5
+    return min(1.0, score)
+
+
 def _distance_score(user_a: User, user_b: User) -> float:
     has_coordinates = None not in (
         user_a.latitude,
@@ -120,8 +167,15 @@ def _calculate_score(user_a: User, user_b: User) -> float:
     settings = get_settings()
     interest_part = settings.match_common_interest_weight * _interest_score(user_a, user_b)
     distance_part = settings.match_distance_weight * _distance_score(user_a, user_b)
-    zodiac_part = 0.2 * _zodiac_score(user_a, user_b)
-    return interest_part + distance_part + zodiac_part
+    zodiac_part = 0.15 * _zodiac_score(user_a, user_b)
+    lang_part = 0.15 * _language_score(user_a, user_b)
+    looking_part = 0.20 * _looking_for_score(user_a, user_b)
+    academic_part = 0.15 * _academic_score(user_a, user_b)
+    worldview_part = 0.10 * _worldview_score(user_a, user_b)
+    trust_boost = min(1.2, max(0.8, (user_b.trust_score or 50) / 50.0))
+
+    raw_total = (interest_part + distance_part + zodiac_part + lang_part + looking_part + academic_part + worldview_part)
+    return round(raw_total * trust_boost, 3)
 
 
 def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int) -> Match | None:
