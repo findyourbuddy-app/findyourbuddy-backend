@@ -229,5 +229,22 @@ def check_readiness(db: Session = Depends(get_db)) -> JSONResponse:
         logger.warning("Readiness check: firebase check failed: %s", exc)
         checks["firebase"] = "error"
 
-    http_status = status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE
-    return JSONResponse(status_code=http_status, content={"status": "ok" if healthy else "degraded", "checks": checks})
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"status": "ok" if healthy else "degraded", "checks": checks},
+    )
+
+
+@router.get("/logs", response_class=PlainTextResponse)
+@router.get("/monitoring/logs", response_class=PlainTextResponse)
+def get_recent_logs(lines: int = 100) -> str:
+    """Returns recent application logs from app.log for live monitoring and debugging."""
+    try:
+        import os
+        if not os.path.exists("app.log"):
+            return "No log file found yet."
+        with open("app.log", "r", encoding="utf-8") as f:
+            content = f.readlines()
+            return "".join(content[-max(1, min(lines, 1000)):])
+    except Exception as exc:
+        return f"Error reading log file: {exc}"
