@@ -263,7 +263,7 @@ def get_ai_match_llm(
     return generate_llm_kanka_synergy(current_user, target_user)
 
 
-_AI_RECOMMENDATION_CANDIDATE_POOL = 200
+_AI_RECOMMENDATION_CANDIDATE_POOL = 30
 
 
 @router.get("/me/ai-recommendations", response_model=list[AIRecommendation])
