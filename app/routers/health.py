@@ -72,6 +72,7 @@ def prometheus_metrics(db: Session = Depends(get_db)) -> str:
         block_count = db.execute(text("SELECT count(*) FROM blocks")).scalar() or 0
         double_buddy_count = db.execute(text("SELECT count(*) FROM double_buddies")).scalar() or 0
         premium_count = db.execute(text("SELECT count(*) FROM subscriptions WHERE status = 'active'")).scalar() or 0
+        bookmark_count = db.execute(text("SELECT count(*) FROM bookmarks")).scalar() or 0
 
         # Supabase / PostgreSQL database health metrics
         try:
