@@ -61,9 +61,9 @@ def prometheus_metrics(db: Session = Depends(get_db)) -> str:
         attendance_count = db.execute(text("SELECT count(*) FROM event_attendances")).scalar() or 0
 
         swipe_count = db.execute(text("SELECT count(*) FROM swipes")).scalar() or 0
-        like_count = db.execute(text("SELECT count(*) FROM swipes WHERE direction = 'like'")).scalar() or 0
-        pass_count = db.execute(text("SELECT count(*) FROM swipes WHERE direction = 'pass'")).scalar() or 0
-        superlike_count = db.execute(text("SELECT count(*) FROM swipes WHERE direction IN ('superlike', 'super_like')")).scalar() or 0
+        like_count = db.execute(text("SELECT count(*) FROM swipes WHERE direction::text = 'LIKE'")).scalar() or 0
+        pass_count = db.execute(text("SELECT count(*) FROM swipes WHERE direction::text = 'PASS'")).scalar() or 0
+        superlike_count = db.execute(text("SELECT count(*) FROM swipes WHERE direction::text IN ('SUPER_LIKE', 'SUPERLIKE')")).scalar() or 0
 
         match_count = db.execute(text("SELECT count(*) FROM matches")).scalar() or 0
         message_count = db.execute(text("SELECT count(*) FROM messages")).scalar() or 0
@@ -71,7 +71,7 @@ def prometheus_metrics(db: Session = Depends(get_db)) -> str:
         report_count = db.execute(text("SELECT count(*) FROM reports")).scalar() or 0
         block_count = db.execute(text("SELECT count(*) FROM blocks")).scalar() or 0
         double_buddy_count = db.execute(text("SELECT count(*) FROM double_buddies")).scalar() or 0
-        premium_count = db.execute(text("SELECT count(*) FROM subscriptions WHERE status = 'active'")).scalar() or 0
+        premium_count = db.execute(text("SELECT count(*) FROM subscriptions WHERE is_active = true")).scalar() or 0
         bookmark_count = db.execute(text("SELECT count(*) FROM bookmarks")).scalar() or 0
 
         # Supabase / PostgreSQL database health metrics
