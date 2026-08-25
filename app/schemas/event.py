@@ -16,8 +16,9 @@ class EventCreate(BaseModel):
     max_attendees: int | None = None
     is_paid: bool = False
     ticket_price: float | None = None
+    image_url: str | None = None
 
-    @field_validator("title", "description", "location_name", "category")
+    @field_validator("title", "description", "location_name", "category", "image_url")
     @classmethod
     def _sanitize_event_strings(cls, v: str | None) -> str | None:
         if v is None:
