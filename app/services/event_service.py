@@ -10,6 +10,7 @@ from app.models.bookmark import Bookmark
 from app.models.event import Event
 from app.models.event_attendance import EventAttendance
 from app.models.match import Match
+from app.models.notification import Notification
 from app.models.swipe import Swipe
 from app.models.user import User
 from app.schemas.event import EventCreate
@@ -276,6 +277,9 @@ def delete_expired_events(db: Session, retention_days: float) -> int:
     db.query(Swipe).filter(Swipe.event_id.in_(expired_ids)).delete(synchronize_session=False)
     db.query(Bookmark).filter(Bookmark.event_id.in_(expired_ids)).delete(synchronize_session=False)
     db.query(EventAttendance).filter(EventAttendance.event_id.in_(expired_ids)).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.event_id.in_(expired_ids)).update(
+        {Notification.event_id: None}, synchronize_session=False
+    )
     for event in expired_events:
         db.delete(event)
 
