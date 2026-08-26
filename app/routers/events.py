@@ -513,6 +513,25 @@ def check_in(
     )
 
 
+@router.get("/{event_id}/attendees", response_model=list[UserPublic])
+def get_event_attendees(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[User]:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    
+    attendees = (
+        db.query(User)
+        .join(EventAttendance, EventAttendance.user_id == User.id)
+        .filter(EventAttendance.event_id == event_id, EventAttendance.status == "approved")
+        .all()
+    )
+    return attendees
+
+
 @router.get("/{event_id}/join-requests", response_model=list[UserRead])
 def get_join_requests(
     event_id: int,
