@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from app.models.event import Event
+from app.models.event_attendance import EventAttendance
 from app.models.user import User
 
 
@@ -241,18 +242,23 @@ def test_rate_event_and_impact_trust_score(
     db_session.commit()
     db_session.refresh(creator)
 
+    rater = db_session.query(User).filter(User.email != "eventcreator@example.com").first()
     event = Event(
         title="Test Creator Event",
         category="coffee",
         location_name="Istanbul",
         latitude=41.0,
         longitude=28.9,
-        starts_at=datetime.now(timezone.utc),
+        starts_at=datetime.now(timezone.utc) - timedelta(hours=1),
         creator_id=creator.id,
     )
     db_session.add(event)
     db_session.commit()
     db_session.refresh(event)
+
+    attendance = EventAttendance(event_id=event.id, user_id=rater.id, status="approved")
+    db_session.add(attendance)
+    db_session.commit()
 
     response = client.post(
         f"/events/{event.id}/rate",

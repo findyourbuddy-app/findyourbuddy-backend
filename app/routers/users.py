@@ -441,19 +441,28 @@ async def purchase_callback(
             conv_id = checkout_form.get("conversationId")
             if conv_id and conv_id.startswith("purchase_"):
                 remainder = conv_id[len("purchase_"):]
-                item_type, quantity, user_id, _timestamp = remainder.rsplit("_", 3)
-                
+                try:
+                    item_type, quantity_str, user_id_str, _timestamp = remainder.rsplit("_", 3)
+                    quantity = int(quantity_str)
+                    user_id = int(user_id_str)
+                except (ValueError, AttributeError):
+                    logger.error("Invalid conversationId format in purchase callback: %s", conv_id)
+                    return responses.HTMLResponse(
+                        content="<html><body><h1>Geçersiz İşlem</h1></body></html>",
+                        status_code=400,
+                    )
+
                 unit_price = PURCHASE_ITEM_PRICES_TRY.get(item_type)
-                expected_price = float(unit_price) * int(quantity) if unit_price else None
+                expected_price = float(unit_price) * quantity if unit_price else None
                 paid_price = str(checkout_form.get("paidPrice") or checkout_form.get("price") or "")
                 if expected_price and paid_price and float(paid_price) < expected_price - _PRICE_TOLERANCE:
-                    logger.warning(f"Price mismatch in store purchase callback: expected {expected_price}, got {paid_price}")
+                    logger.warning("Price mismatch in store purchase callback: expected %s, got %s", expected_price, paid_price)
                     return responses.HTMLResponse(content="<html><body><h1>Ödeme Tutarı Geçersiz</h1></body></html>", status_code=400)
 
-                if claim_payment_callback(db, token, "purchase", int(user_id)):
-                    user = db.get(User, int(user_id))
+                if claim_payment_callback(db, token, "purchase", user_id):
+                    user = db.get(User, user_id)
                     if user is not None:
-                        apply_purchase(user, item_type, int(quantity))
+                        apply_purchase(user, item_type, quantity)
                         db.commit()
                 return responses.HTMLResponse(content=f"""
                     <html>

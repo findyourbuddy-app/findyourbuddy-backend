@@ -329,7 +329,15 @@ async def event_credits_callback(
 
             conv_id = checkout_form.get("conversationId")
             if conv_id and conv_id.startswith("credits_"):
-                user_id = int(conv_id.split("_")[1])
+                parts = conv_id.split("_")
+                try:
+                    user_id = int(parts[1])
+                except (IndexError, ValueError):
+                    logger.error("Invalid conversationId format in credits callback: %s", conv_id)
+                    return responses.HTMLResponse(
+                        content="<html><body><h1>Geçersiz İşlem</h1></body></html>",
+                        status_code=400,
+                    )
                 if claim_payment_callback(db, token, "event_credits", user_id):
                     grant_event_credits(db, user_id, EVENT_CREDITS_PER_PURCHASE)
                 return responses.HTMLResponse(content=f"""
@@ -694,6 +702,14 @@ def rate_event(
 
     if event.creator_id == current_user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot rate your own event")
+
+    attendance = (
+        db.query(EventAttendance)
+        .filter(EventAttendance.event_id == event_id, EventAttendance.user_id == current_user.id, EventAttendance.status == "approved")
+        .first()
+    )
+    if attendance is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You must have attended this event to rate it")
 
     existing = db.query(EventRating).filter(
         EventRating.event_id == event_id,
