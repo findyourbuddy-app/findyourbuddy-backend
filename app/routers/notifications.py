@@ -11,6 +11,7 @@ from app.services.notification_service import list_notifications, mark_notificat
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
+@router.get("", response_model=list[NotificationRead])
 @router.get("/", response_model=list[NotificationRead])
 def list_my_notifications(
     skip: int = Query(default=0, ge=0),

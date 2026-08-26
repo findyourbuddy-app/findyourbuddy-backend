@@ -22,7 +22,7 @@ from app.services.message_service import (
     send_message,
 )
 from app.services.llm_matching_service import generate_llm_icebreakers
-from app.services.notification_service import notify_new_message
+from app.services.notification_service import notify_new_message, notify_new_message_bulk
 
 router = APIRouter(prefix="/matches/{match_id}/messages", tags=["messages"])
 logger = logging.getLogger(__name__)

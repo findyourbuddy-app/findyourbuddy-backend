@@ -49,17 +49,46 @@ def notify_new_message(db: Session, sender: NotificationSender, message: Message
     db.commit()
 
 
+def notify_new_message_bulk(
+    db: Session, sender: NotificationSender, message: Message, recipient_ids: set[int]
+) -> None:
+    """Notifies multiple recipients with one push batch and one DB commit."""
+    if not recipient_ids:
+        return
+    title = "Yeni Mesaj 💬"
+    body = "Sana yeni bir mesaj geldi."
+    if hasattr(sender, "send_bulk"):
+        sender.send_bulk(list(recipient_ids), title, body)
+    else:
+        for rid in recipient_ids:
+            sender.send(rid, title, body)
+    for rid in recipient_ids:
+        db.add(Notification(
+            user_id=rid,
+            match_id=message.match_id,
+            notification_type="message",
+            data={"match_id": message.match_id, "sender_id": message.sender_id},
+            title=title,
+            body=body,
+        ))
+    db.commit()
+
+
 def list_notifications(
     db: Session, user_id: int, skip: int = 0, limit: int = 50
 ) -> list[Notification]:
-    return (
-        db.query(Notification)
-        .filter(Notification.user_id == user_id)
-        .order_by(Notification.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    try:
+        return (
+            db.query(Notification)
+            .filter(Notification.user_id == user_id)
+            .order_by(Notification.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    except Exception as e:
+        db.rollback()
+        return []
 
 
 def mark_notifications_as_read(db: Session, user_id: int) -> int:
