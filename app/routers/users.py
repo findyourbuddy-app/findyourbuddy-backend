@@ -75,6 +75,7 @@ def _upload_validated_photo(file: UploadFile, storage: MediaStorage) -> str:
 
 
 @router.get("/me", response_model=UserRead)
+@router.get("/me/", response_model=UserRead)
 def read_current_user(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
@@ -199,6 +200,7 @@ def upload_voice_note(
 
 
 @router.get("/me/photos", response_model=list[UserPhotoRead])
+@router.get("/me/photos/", response_model=list[UserPhotoRead])
 def list_my_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

@@ -51,29 +51,9 @@ if settings.sentry_dsn:
 _is_production = settings.environment == "production"
 
 
-def _auto_migrate_db():
-    from sqlalchemy import text
-    from app.database import engine
-    with engine.connect() as conn:
-        for stmt in [
-            "ALTER TABLE notifications ADD COLUMN notification_type VARCHAR(50);",
-            "ALTER TABLE notifications ADD COLUMN data JSON;",
-        ]:
-            try:
-                conn.execute(text(stmt))
-                conn.commit()
-            except Exception:
-                pass
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.core.scheduler import run_cleanup_jobs
-
-    try:
-        _auto_migrate_db()
-    except Exception:
-        _logger.exception("Auto migration failed")
 
     start_scheduler()
     try:
