@@ -84,3 +84,20 @@ class EventCreationQuota(BaseModel):
     events_created_this_week: int
     weekly_limit: int | None
     credits_balance: int
+
+
+class EventRatingCreate(BaseModel):
+    rating: int
+    comment: str | None = None
+
+
+class EventRatingRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_id: int
+    user_id: int
+    rating: int
+    comment: str | None
+    created_at: datetime
+

@@ -16,10 +16,11 @@ from app.core.rate_limit import event_writes_rate_limit, limiter
 from app.database import get_db
 from app.models.event import Event
 from app.models.event_attendance import EventAttendance
+from app.models.event_rating import EventRating
 from app.models.match import Match
 from app.models.notification import Notification
 from app.models.user import User
-from app.schemas.event import EventCheckIn, EventCreate, EventCreationQuota, EventPublicSummary, EventRead
+from app.schemas.event import EventCheckIn, EventCreate, EventCreationQuota, EventPublicSummary, EventRatingCreate, EventRead
 from app.schemas.user import UserRead, UserPublic
 from app.services.event_service import (
     EventCheckInOutsideWindowError,
@@ -667,3 +668,57 @@ def record_bulk_event_impressions(
 ) -> None:
     """Records impressions in bulk when a list of event cards is rendered."""
     return None
+
+
+@router.post("/{event_id}/rate")
+def rate_event(
+    event_id: int,
+    payload: EventRatingCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if payload.rating < 1 or payload.rating > 5:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be between 1 and 5 stars")
+
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    if event.creator_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot rate your own event")
+
+    existing = db.query(EventRating).filter(
+        EventRating.event_id == event_id,
+        EventRating.user_id == current_user.id
+    ).first()
+
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You have already rated this event")
+
+    rating_record = EventRating(
+        event_id=event_id,
+        user_id=current_user.id,
+        rating=payload.rating,
+        comment=payload.comment,
+    )
+    db.add(rating_record)
+
+    # Impact Host / Creator Trust Score if event was created by a user
+    creator_trust_score = None
+    if event.creator_id:
+        creator = db.get(User, event.creator_id)
+        if creator:
+            if payload.rating >= 4:
+                boost = 3 if payload.rating == 5 else 2
+                creator.trust_score += boost
+            elif payload.rating <= 2:
+                penalty = 4 if payload.rating == 1 else 2
+                creator.trust_score -= penalty
+            creator_trust_score = creator.trust_score
+
+    db.commit()
+    return {
+        "status": "ok",
+        "message": "Event and host rated successfully",
+        "creator_trust_score": creator_trust_score
+    }

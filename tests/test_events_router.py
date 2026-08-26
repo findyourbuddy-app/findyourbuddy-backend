@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
-
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+from app.models.event import Event
+from app.models.user import User
 
 
 def _event_payload(**overrides: object) -> dict[str, object]:
@@ -222,4 +224,45 @@ def test_create_event_sanitizes_xss_description(
     assert "<script>" not in cleaned_desc
     assert "</script>" not in cleaned_desc
     assert "alert(1)" in cleaned_desc
+
+
+def test_rate_event_and_impact_trust_score(
+    client: TestClient, auth_headers: dict[str, str], db_session: Session
+) -> None:
+    creator = User(
+        email="eventcreator@example.com",
+        hashed_password="hash",
+        display_name="Creator User",
+        referral_code="CREATOR123",
+        phone_number="+905550000000",
+        trust_score=50,
+    )
+    db_session.add(creator)
+    db_session.commit()
+    db_session.refresh(creator)
+
+    event = Event(
+        title="Test Creator Event",
+        category="coffee",
+        location_name="Istanbul",
+        latitude=41.0,
+        longitude=28.9,
+        starts_at=datetime.now(timezone.utc),
+        creator_id=creator.id,
+    )
+    db_session.add(event)
+    db_session.commit()
+    db_session.refresh(event)
+
+    response = client.post(
+        f"/events/{event.id}/rate",
+        headers=auth_headers,
+        json={"rating": 5, "comment": "Awesome event!"},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+    db_session.refresh(creator)
+    assert creator.trust_score == 53
+
 
