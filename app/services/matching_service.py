@@ -163,6 +163,9 @@ def _distance_score(user_a: User, user_b: User) -> float:
     return max(0.0, 1 - distance_km / max_distance_km)
 
 
+_FIXED_WEIGHTS_SUM = 0.15 + 0.15 + 0.20 + 0.15 + 0.10  # zodiac + lang + looking + academic + worldview
+
+
 def _calculate_score(user_a: User, user_b: User) -> float:
     settings = get_settings()
     interest_part = settings.match_common_interest_weight * _interest_score(user_a, user_b)
@@ -174,8 +177,9 @@ def _calculate_score(user_a: User, user_b: User) -> float:
     worldview_part = 0.10 * _worldview_score(user_a, user_b)
     trust_boost = min(1.2, max(0.8, (user_b.trust_score or 50) / 50.0))
 
-    raw_total = (interest_part + distance_part + zodiac_part + lang_part + looking_part + academic_part + worldview_part)
-    return round(raw_total * trust_boost, 3)
+    total_weight = settings.match_common_interest_weight + settings.match_distance_weight + _FIXED_WEIGHTS_SUM
+    raw_total = interest_part + distance_part + zodiac_part + lang_part + looking_part + academic_part + worldview_part
+    return round((raw_total / total_weight) * trust_boost, 3)
 
 
 def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int) -> Match | None:

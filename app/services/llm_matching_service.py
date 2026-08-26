@@ -13,6 +13,7 @@ except ImportError:
 from app.config import get_settings
 from app.core.sanitizer import sanitize_prompt_input, validate_content_safety
 from app.models.user import User
+from app.services.cache_service import CacheService
 
 _ICEBREAKER_CACHE_MAX_SIZE = 500
 
@@ -157,6 +158,11 @@ _ICEBREAKER_CACHE: OrderedDict[tuple[int, int], list[dict]] = OrderedDict()
 def generate_llm_icebreakers(user1: User, user2: User) -> list[dict]:
     """Generates personalized AI conversation starters & voice challenges between two users."""
     cache_key = (min(user1.id, user2.id), max(user1.id, user2.id))
+
+    redis_cached = CacheService.get_cached_icebreakers(user1.id, user2.id)
+    if redis_cached is not None:
+        return redis_cached
+
     if cache_key in _ICEBREAKER_CACHE:
         return _ICEBREAKER_CACHE[cache_key]
 
@@ -243,6 +249,7 @@ def generate_llm_icebreakers(user1: User, user2: User) -> list[dict]:
                 _ICEBREAKER_CACHE[cache_key] = items
                 if len(_ICEBREAKER_CACHE) > _ICEBREAKER_CACHE_MAX_SIZE:
                     _ICEBREAKER_CACHE.popitem(last=False)
+                CacheService.set_cached_icebreakers(user1.id, user2.id, items)
                 return items
         except Exception as parse_err:
             logger.error(f"Failed to parse LLM icebreaker response: {parse_err}")
@@ -250,6 +257,7 @@ def generate_llm_icebreakers(user1: User, user2: User) -> list[dict]:
     _ICEBREAKER_CACHE[cache_key] = fallback_icebreakers
     if len(_ICEBREAKER_CACHE) > _ICEBREAKER_CACHE_MAX_SIZE:
         _ICEBREAKER_CACHE.popitem(last=False)
+    CacheService.set_cached_icebreakers(user1.id, user2.id, fallback_icebreakers)
     return fallback_icebreakers
 
 

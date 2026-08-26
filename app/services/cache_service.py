@@ -123,3 +123,34 @@ return 1
             client.delete(key)
         except Exception as e:
             logger.error("Redis delete error: %s", e)
+
+    @classmethod
+    def get_cached_icebreakers(cls, user_a_id: int, user_b_id: int) -> list[dict] | None:
+        client = cls._get_client()
+        if not client:
+            return None
+
+        lo, hi = (user_a_id, user_b_id) if user_a_id < user_b_id else (user_b_id, user_a_id)
+        key = f"icebreakers:{lo}:{hi}"
+        try:
+            data = client.get(key)
+            if data:
+                return json.loads(data)
+        except Exception as e:
+            logger.error("Redis icebreaker get error: %s", e)
+        return None
+
+    @classmethod
+    def set_cached_icebreakers(
+        cls, user_a_id: int, user_b_id: int, items: list[dict], ttl: int = 86400
+    ) -> None:
+        client = cls._get_client()
+        if not client:
+            return
+
+        lo, hi = (user_a_id, user_b_id) if user_a_id < user_b_id else (user_b_id, user_a_id)
+        key = f"icebreakers:{lo}:{hi}"
+        try:
+            client.setex(key, ttl, json.dumps(items))
+        except Exception as e:
+            logger.error("Redis icebreaker set error: %s", e)

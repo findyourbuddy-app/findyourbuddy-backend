@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -129,7 +130,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
             f"Hata Detayı: {str(exc)}\n\n"
             f"Lütfen sunucu loglarını ve monitoring panosunu inceleyin."
         )
-        send_plain_email(settings.admin_alert_email, subject, body)
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, send_plain_email, settings.admin_alert_email, subject, body)
     return responses.JSONResponse(
         status_code=500,
         content={"detail": "Sunucu tarafında bir hata oluştu. Lütfen tekrar deneyin."},
