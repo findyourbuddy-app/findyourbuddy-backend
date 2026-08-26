@@ -91,7 +91,7 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
             try:
                 from app.core.notifications import get_notification_sender
                 from app.services.notification_service import notify_photo_verification_result
-                notify_photo_verification_result(db, get_notification_sender(), user.id, verified=True)
+                notify_photo_verification_result(db, get_notification_sender(db), user.id, verified=True)
             except Exception:
                 pass
             return {
@@ -189,7 +189,7 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
                 try:
                     from app.core.notifications import get_notification_sender
                     from app.services.notification_service import notify_photo_verification_result
-                    notify_photo_verification_result(db, get_notification_sender(), user.id, verified=True)
+                    notify_photo_verification_result(db, get_notification_sender(db), user.id, verified=True)
                 except Exception:
                     pass
                 return {
@@ -204,7 +204,7 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
                 try:
                     from app.core.notifications import get_notification_sender
                     from app.services.notification_service import notify_photo_verification_result
-                    notify_photo_verification_result(db, get_notification_sender(), user.id, verified=False, reason=reason)
+                    notify_photo_verification_result(db, get_notification_sender(db), user.id, verified=False, reason=reason)
                 except Exception:
                     pass
                 return {
