@@ -122,6 +122,7 @@ def reset_password(db: Session, token: str, new_password: str) -> None:
 
     user = db.get(User, reset_token.user_id)
     user.hashed_password = hash_password(new_password)
+    user.token_version += 1
     reset_token.used_at = utcnow()
     db.commit()
 
@@ -130,6 +131,7 @@ def change_password(db: Session, user: User, current_password: str, new_password
     if not verify_password(current_password, user.hashed_password):
         raise IncorrectCurrentPasswordError(user.id)
     user.hashed_password = hash_password(new_password)
+    user.token_version += 1
     db.commit()
 
 
