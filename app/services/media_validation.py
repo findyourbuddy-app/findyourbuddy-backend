@@ -46,7 +46,7 @@ def validate_image(file: BinaryIO) -> bytes:
 WEBP_QUALITY = 80
 
 
-def compress_image(data: bytes, format: str = "WEBP") -> bytes:
+def compress_image(data: bytes, format: str = "JPEG") -> bytes:
     image = Image.open(io.BytesIO(data))
     try:
         image = ImageOps.exif_transpose(image)
