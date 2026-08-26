@@ -75,6 +75,9 @@ def list_messages(
     if match.event_id:
         if requester_id not in (match.user_a_id, match.user_b_id):
             raise NotMatchParticipantError(requester_id)
+        other_id = match.user_b_id if match.user_a_id == requester_id else match.user_a_id
+        if is_blocked(db, requester_id, other_id):
+            raise BlockedParticipantError(requester_id)
         group_match_ids = [m.id for m in db.query(Match.id).filter(Match.event_id == match.event_id).all()]
         return (
             db.query(Message)
@@ -99,6 +102,8 @@ def list_messages(
 def mark_messages_as_read(db: Session, match_id: int, reader_id: int) -> int:
     match = db.get(Match, match_id)
     if match and match.event_id:
+        if reader_id not in (match.user_a_id, match.user_b_id):
+            raise NotMatchParticipantError(reader_id)
         group_match_ids = [m.id for m in db.query(Match.id).filter(Match.event_id == match.event_id).all()]
         result = db.execute(
             update(Message)
