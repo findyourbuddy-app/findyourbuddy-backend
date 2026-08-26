@@ -43,12 +43,26 @@ def validate_image(file: BinaryIO) -> bytes:
     return data
 
 
-def compress_image(data: bytes) -> bytes:
+WEBP_QUALITY = 80
+
+
+def compress_image(data: bytes, format: str = "WEBP") -> bytes:
     image = Image.open(io.BytesIO(data))
     try:
         image = ImageOps.exif_transpose(image)
     except Exception:
         pass
+
+    if format.upper() == "WEBP":
+        if image.mode in ("RGBA", "P"):
+            image = image.convert("RGBA")
+        else:
+            image = image.convert("RGB")
+        image.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.LANCZOS)
+        output = io.BytesIO()
+        image.save(output, format="WEBP", quality=WEBP_QUALITY, method=4)
+        return output.getvalue()
+
     image = image.convert("RGB")
     image.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.LANCZOS)
 
