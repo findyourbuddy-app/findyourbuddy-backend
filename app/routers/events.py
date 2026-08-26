@@ -390,6 +390,11 @@ def read_event(
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     creator = db.get(User, event.creator_id) if event.creator_id else None
+    user_has_rated = db.query(EventRating).filter(
+        EventRating.event_id == event_id,
+        EventRating.user_id == current_user.id
+    ).first() is not None
+
     return EventRead.model_validate(event).model_copy(
         update={
             "attendee_count": count_attendees(db, event_id),
@@ -397,6 +402,7 @@ def read_event(
             "is_pending": is_pending(db, event_id, current_user.id),
             "is_checked_in": is_checked_in(db, event_id, current_user.id),
             "is_ticket_verified": is_ticket_verified(db, event_id, current_user.id),
+            "has_rated": user_has_rated,
             "creator": UserPublic.model_validate(creator) if creator else None,
         }
     )

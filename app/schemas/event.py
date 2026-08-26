@@ -57,6 +57,7 @@ class EventRead(BaseModel):
     is_attending: bool = False
     is_pending: bool = False
     is_checked_in: bool = False
+    has_rated: bool = False
 
 
 class EventPublicSummary(BaseModel):
