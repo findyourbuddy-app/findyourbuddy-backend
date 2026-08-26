@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -10,6 +10,7 @@ class Event(Base):
     __tablename__ = "events"
     __table_args__ = (
         UniqueConstraint("source", "external_id", name="uq_events_source_external_id"),
+        Index("ix_events_starts_at_approved", "starts_at", "is_approved"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
