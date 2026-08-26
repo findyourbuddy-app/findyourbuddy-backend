@@ -452,6 +452,8 @@ def attend_event(
             title="Yeni Katılım İsteği!",
             body=f"{current_user.display_name}, '{event.title}' etkinliğine katılmak istiyor.",
             event_id=event.id,
+            notification_type="event_request",
+            data={"event_id": event.id},
         ))
         db.commit()
 
