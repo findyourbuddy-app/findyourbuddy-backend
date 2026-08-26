@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.event import Event
 from app.schemas.event_ingestion import EventIngestBatch, EventIngestPayload
-from app.services.event_ingestion_service import ingest_events
+from app.services.event_ingestion_service import get_known_external_ids, ingest_events
 
 
 @pytest.fixture(autouse=True)
@@ -100,3 +100,22 @@ def test_ingest_continues_batch_after_invalid_record(db_session: Session) -> Non
     assert result.skipped == 1
     assert result.created == 1
     assert db_session.query(Event).filter(Event.external_id == "good").one() is not None
+
+
+def test_get_known_external_ids_returns_only_matching_source(db_session: Session) -> None:
+    ingest_events(
+        db_session,
+        EventIngestBatch(
+            events=[
+                _payload(external_id="evt-1", source="biletix"),
+                _payload(external_id="evt-2", source="biletix"),
+                _payload(external_id="evt-3", source="etkinlikio"),
+            ]
+        ),
+    )
+
+    assert set(get_known_external_ids(db_session, "biletix")) == {"evt-1", "evt-2"}
+
+
+def test_get_known_external_ids_empty_for_unknown_source(db_session: Session) -> None:
+    assert get_known_external_ids(db_session, "biletix") == []

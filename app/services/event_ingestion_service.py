@@ -13,6 +13,11 @@ def _find_existing_event(db: Session, source: str, external_id: str) -> Event | 
     )
 
 
+def get_known_external_ids(db: Session, source: str) -> list[str]:
+    rows = db.query(Event.external_id).filter(Event.source == source).all()
+    return [external_id for (external_id,) in rows]
+
+
 def _apply_ingest_payload(event: Event, payload: EventIngestPayload) -> None:
     event.title = payload.title
     event.description = payload.description

@@ -46,3 +46,26 @@ def test_ingest_with_correct_api_key_returns_result(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body == {"created": 1, "updated": 0, "skipped": 0, "errors": []}
+
+
+def test_known_ids_without_api_key_returns_401(client: TestClient) -> None:
+    response = client.get("/internal/events/known-ids", params={"source": "biletix"})
+
+    assert response.status_code == 401
+
+
+def test_known_ids_returns_ingested_external_ids(client: TestClient) -> None:
+    client.post(
+        "/internal/events/ingest",
+        json=_batch_payload(),
+        headers={"X-Scraper-Api-Key": get_settings().scraper_api_key},
+    )
+
+    response = client.get(
+        "/internal/events/known-ids",
+        params={"source": "biletix"},
+        headers={"X-Scraper-Api-Key": get_settings().scraper_api_key},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"external_ids": ["evt-1"]}
