@@ -31,7 +31,11 @@ uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
 
-API varsayılan olarak `http://127.0.0.1:8000` üzerinde çalışır, health check için `GET /health`.
+API `http://127.0.0.1:8000` üzerinde çalışır, health check için `GET /health/`.
+
+Alternatif olarak `uv run python run_server.py` boştaki ilk portu seçer
+(sırasıyla 8001, 8000, 8080, 8088). Mobil istemcinin dev fallback'i 8001'i
+beklediği için lokal geliştirmede bu script tercih edilir.
 
 ## Test
 
