@@ -72,7 +72,7 @@ def list_messages(
     match = db.get(Match, match_id)
     if match is None:
         raise MatchNotFoundError(match_id)
-    if match.event_id:
+    if match.event and match.event.is_group_event:
         if requester_id not in (match.user_a_id, match.user_b_id):
             raise NotMatchParticipantError(requester_id)
         other_id = match.user_b_id if match.user_a_id == requester_id else match.user_a_id
