@@ -62,13 +62,10 @@ def validate_image(file: BinaryIO) -> bytes:
 
 
 def validate_chat_image(file: BinaryIO) -> tuple[bytes, str]:
-    """For chat photos: web-renderable formats (JPEG/PNG/WEBP) are returned
-    untouched so the recipient sees the sender's original resolution. HEIC is
-    transcoded to a full-resolution JPEG (no downscaling). Returns
-    (bytes, file extension)."""
+    """For chat photos: images are auto-rotated (EXIF transpose), scaled down if
+    dimensions exceed MAX_DIMENSION (1600px), and compressed to optimized JPEG (quality 85).
+    This reduces raw 15MB photos to ~250KB for near-instant upload and delivery."""
     data, fmt = _read_and_verify(file)
-    if fmt in ALLOWED_FORMATS:
-        return data, _FORMAT_EXTENSIONS[fmt]
 
     try:
         image = Image.open(io.BytesIO(data))
@@ -76,12 +73,19 @@ def validate_chat_image(file: BinaryIO) -> tuple[bytes, str]:
             image = ImageOps.exif_transpose(image)
         except Exception:
             pass
+
+        w, h = image.size
+        if w > MAX_DIMENSION or h > MAX_DIMENSION:
+            image.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.Resampling.LANCZOS)
+
         image = image.convert("RGB")
         output = io.BytesIO()
-        image.save(output, format="JPEG", quality=CHAT_JPEG_QUALITY)
-    except (UnidentifiedImageError, OSError) as exc:
-        raise InvalidImageError("Not a valid image file") from exc
-    return output.getvalue(), ".jpg"
+        image.save(output, format="JPEG", quality=85, optimize=True)
+        return output.getvalue(), ".jpg"
+    except Exception:
+        if fmt in ALLOWED_FORMATS:
+            return data, _FORMAT_EXTENSIONS[fmt]
+        raise InvalidImageError("Could not process image")
 
 
 WEBP_QUALITY = 80
