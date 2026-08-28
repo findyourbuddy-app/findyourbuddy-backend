@@ -80,3 +80,23 @@ def test_validate_chat_image_rejects_disallowed_format() -> None:
 def test_validate_chat_image_rejects_oversized_file() -> None:
     with pytest.raises(ImageTooLargeError):
         validate_chat_image(io.BytesIO(b"\x00" * (MAX_IMAGE_BYTES + 1)))
+
+
+def _heic_bytes(width: int = 120, height: int = 80) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), color="red").save(buffer, format="HEIF")
+    return buffer.getvalue()
+
+
+def test_validate_image_accepts_heic() -> None:
+    # iOS shares photos as HEIC; the profile-photo path re-encodes afterwards.
+    assert validate_image(io.BytesIO(_heic_bytes())) == _heic_bytes()
+
+
+def test_validate_chat_image_transcodes_heic_to_jpeg_keeping_size() -> None:
+    data, ext = validate_chat_image(io.BytesIO(_heic_bytes(320, 200)))
+
+    assert ext == ".jpg"
+    transcoded = Image.open(io.BytesIO(data))
+    assert transcoded.format == "JPEG"
+    assert transcoded.size == (320, 200)

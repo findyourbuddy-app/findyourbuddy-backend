@@ -28,6 +28,7 @@ dependencies = [
     "openai>=1.0.0",
     "boto3>=1.43.73",
     "firebase-admin>=7.5.0",
+    "pillow-heif>=0.22.0",
 ]
 
 [dependency-groups]
