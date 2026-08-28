@@ -94,16 +94,16 @@ def post_message(
         rows = db.query(Match.user_a_id, Match.user_b_id).filter(Match.event_id == match.event_id).all()
         recipient_ids = {uid for row in rows for uid in row if uid != current_user.id}
         notify_new_message_bulk(db, notification_sender, message, recipient_ids)
-        _relay_to_firestore(match_id, message)
+        _relay_to_firestore(match_id, message, data)
     elif match:
         recipient_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
         notify_new_message(db, notification_sender, message, recipient_id)
-        _relay_to_firestore(match_id, message)
+        _relay_to_firestore(match_id, message, data)
 
     return message
 
 
-def _relay_to_firestore(match_id: int, message: Message) -> None:
+def _relay_to_firestore(match_id: int, message: Message, data: MessageCreate) -> None:
     """Writes the already-moderated, already-rate-limited message into
     Firestore for real-time delivery. Best-effort: a Firestore outage
     shouldn't fail the send, since the message is already durably saved
@@ -117,6 +117,9 @@ def _relay_to_firestore(match_id: int, message: Message) -> None:
             "content": message.content,
             "message_type": message.message_type,
             "media_url": message.media_url,
+            "media_width": data.media_width,
+            "media_height": data.media_height,
+            "client_temp_id": data.client_temp_id,
             "created_at": message.created_at,
             "is_read": False,
         })
