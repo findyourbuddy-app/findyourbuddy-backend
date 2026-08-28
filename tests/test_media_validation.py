@@ -7,6 +7,7 @@ from app.services.media_validation import (
     MAX_IMAGE_BYTES,
     ImageTooLargeError,
     InvalidImageError,
+    validate_chat_image,
     validate_image,
 )
 
@@ -51,3 +52,31 @@ def test_validate_image_rejects_oversized_file() -> None:
 
     with pytest.raises(ImageTooLargeError):
         validate_image(io.BytesIO(oversized))
+
+
+def test_validate_chat_image_returns_original_bytes_untouched() -> None:
+    data = _image_bytes("JPEG")
+
+    result, ext = validate_chat_image(io.BytesIO(data))
+
+    assert result == data
+    assert ext == ".jpg"
+
+
+def test_validate_chat_image_maps_extension_by_format() -> None:
+    _, ext = validate_chat_image(io.BytesIO(_image_bytes("PNG")))
+
+    assert ext == ".png"
+
+
+def test_validate_chat_image_rejects_disallowed_format() -> None:
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), color="green").save(buffer, format="BMP")
+
+    with pytest.raises(InvalidImageError):
+        validate_chat_image(io.BytesIO(buffer.getvalue()))
+
+
+def test_validate_chat_image_rejects_oversized_file() -> None:
+    with pytest.raises(ImageTooLargeError):
+        validate_chat_image(io.BytesIO(b"\x00" * (MAX_IMAGE_BYTES + 1)))
