@@ -94,7 +94,11 @@ def post_message(
         rows = db.query(Match.user_a_id, Match.user_b_id).filter(Match.event_id == match.event_id).all()
         recipient_ids = {uid for row in rows for uid in row if uid != current_user.id}
         notify_new_message_bulk(db, notification_sender, message, recipient_ids)
-        _relay_to_firestore(match_id, message, data)
+        
+        event_match_rows = db.query(Match.id).filter(Match.event_id == match.event_id).all()
+        event_match_ids = {m_row[0] for m_row in event_match_rows}
+        for m_id in event_match_ids:
+            _relay_to_firestore(m_id, message, data)
     elif match:
         recipient_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
         notify_new_message(db, notification_sender, message, recipient_id)
