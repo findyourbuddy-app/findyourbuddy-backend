@@ -54,7 +54,6 @@ EVENT_CREDITS_PRICE_TRY = "49.00"
 router = APIRouter(prefix="/events", tags=["events"])
 
 
-@router.get("", response_model=list[EventRead])
 @router.get("/", response_model=list[EventRead])
 def list_all_events(
     category: str | None = None,
@@ -416,7 +415,6 @@ def read_event(
     )
 
 
-@router.post("", response_model=EventRead, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=EventRead, status_code=status.HTTP_201_CREATED)
 @limiter.limit(event_writes_rate_limit)
 def create_new_event(
@@ -664,45 +662,6 @@ def approve_all_join_requests(
             "is_pending": is_pending(db, event_id, current_user.id),
         }
     )
-
-
-@router.get("/{event_id}/attendees", response_model=list[UserRead])
-def get_event_attendees(
-    event_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> list[User]:
-    event = db.get(Event, event_id)
-    if event is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-    
-    attendees = (
-        db.query(User)
-        .join(EventAttendance, EventAttendance.user_id == User.id)
-        .filter(EventAttendance.event_id == event_id, EventAttendance.status == "approved")
-        .all()
-    )
-    return attendees
-
-
-@router.post("/{event_id}/impressions", status_code=status.HTTP_204_NO_CONTENT)
-def record_event_impression(
-    event_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> None:
-    """Records an impression when an event card is rendered/viewed by a user."""
-    return None
-
-
-@router.post("/impressions", status_code=status.HTTP_204_NO_CONTENT)
-def record_bulk_event_impressions(
-    event_ids: list[int],
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> None:
-    """Records impressions in bulk when a list of event cards is rendered."""
-    return None
 
 
 @router.post("/{event_id}/rate")

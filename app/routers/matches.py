@@ -27,7 +27,6 @@ from app.services.matching_service import (
 router = APIRouter(prefix="/matches", tags=["matches"])
 
 
-@router.get("", response_model=list[MatchRead])
 @router.get("/", response_model=list[MatchRead])
 def list_my_matches(
     skip: int = Query(default=0, ge=0),

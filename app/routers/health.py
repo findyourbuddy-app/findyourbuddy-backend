@@ -6,13 +6,14 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.deps import get_current_staff_user
 from app.database import get_db
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/health", tags=["health"])
 
 
-@router.get("")
 @router.get("/")
 def check_service_status() -> dict[str, str]:
     return {"status": "ok"}
@@ -31,9 +32,13 @@ def check_database_status(db: Session = Depends(get_db)) -> JSONResponse:
 
 @router.get("/metrics", response_class=PlainTextResponse)
 @router.get("/monitoring/metrics", response_class=PlainTextResponse)
-def prometheus_metrics(db: Session = Depends(get_db)) -> str:
-    """Exports comprehensive Prometheus-compatible metrics for system health,
-    domain statistics, user analytics, external API usage, and cloud cost metrics."""
+def prometheus_metrics(
+    db: Session = Depends(get_db),
+    _staff_user: User = Depends(get_current_staff_user),
+) -> str:
+    """Exports Prometheus-compatible metrics for system health and domain
+    statistics. Staff-only: these numbers include user demographics and
+    revenue, so the endpoint is not publicly scrapable."""
     lines = [
         "# HELP findyourbuddy_up Server health status (1 = healthy, 0 = unhealthy)",
         "# TYPE findyourbuddy_up gauge",
@@ -171,31 +176,6 @@ def prometheus_metrics(db: Session = Depends(get_db)) -> str:
             "# HELP app_double_buddy_requests_total Double buddy (pairs) event requests",
             "# TYPE app_double_buddy_requests_total gauge",
             f"app_double_buddy_requests_total {double_buddy_count}",
-
-            "# HELP external_api_university_requests_total University search API usage",
-            "# TYPE external_api_university_requests_total counter",
-            "external_api_university_requests_total 142",
-            "# HELP external_api_giphy_requests_total Giphy GIF search & load requests",
-            "# TYPE external_api_giphy_requests_total counter",
-            "external_api_giphy_requests_total 89",
-            "# HELP external_api_novita_llm_tokens_total Novita AI LLM (DeepSeek) token usage",
-            "# TYPE external_api_novita_llm_tokens_total counter",
-            "external_api_novita_llm_tokens_total 45200",
-            "# HELP external_api_novita_vision_tokens_total Novita AI Vision (Qwen) photo verification token usage",
-            "# TYPE external_api_novita_vision_tokens_total counter",
-            "external_api_novita_vision_tokens_total 18500",
-            "# HELP external_api_novita_tokens_total Novita AI total aggregated token usage (LLM + Vision)",
-            "# TYPE external_api_novita_tokens_total counter",
-            "external_api_novita_tokens_total 63700",
-            "# HELP external_api_novita_total_cost_usd Total Novita AI estimated cost in USD",
-            "# TYPE external_api_novita_total_cost_usd counter",
-            "external_api_novita_total_cost_usd 0.1274",
-            "# HELP external_api_iyzico_transactions_total Iyzico payment gateway transaction count",
-            "# TYPE external_api_iyzico_transactions_total counter",
-            "external_api_iyzico_transactions_total 18",
-            "# HELP external_api_iyzico_volume_try_total Iyzico total sales volume in TRY",
-            "# TYPE external_api_iyzico_volume_try_total counter",
-            "external_api_iyzico_volume_try_total 1782.00",
         ])
     except Exception as exc:
         logger.warning("Failed to collect DB metrics for Prometheus: %s", exc)
@@ -238,8 +218,12 @@ def check_readiness(db: Session = Depends(get_db)) -> JSONResponse:
 
 @router.get("/logs", response_class=PlainTextResponse)
 @router.get("/monitoring/logs", response_class=PlainTextResponse)
-def get_recent_logs(lines: int = 100) -> str:
-    """Returns recent application logs from app.log for live monitoring and debugging."""
+def get_recent_logs(
+    lines: int = 100,
+    _staff_user: User = Depends(get_current_staff_user),
+) -> str:
+    """Returns recent application logs from app.log. Staff-only: the log
+    stream contains user activity and exception stack traces."""
     try:
         import os
         if not os.path.exists("app.log"):
