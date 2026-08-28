@@ -147,7 +147,7 @@ def test_upload_profile_photo_rejects_oversized_file(
     monkeypatch.setenv("MEDIA_ROOT", str(tmp_path))
     get_media_storage.cache_clear()
 
-    oversized = b"\x00" * (8 * 1024 * 1024 + 1)
+    oversized = b"\x00" * (20 * 1024 * 1024 + 1)
     response = client.post(
         "/users/me/photo",
         headers=auth_headers,

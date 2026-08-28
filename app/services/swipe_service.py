@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import random
 from app.core.datetime_utils import utcnow
 
 from sqlalchemy import exists
@@ -215,6 +216,9 @@ def list_swipe_candidates(
 
     boosted_ids = premium_user_ids(db, [user.id for user in candidates])
     now = utcnow()
+
+    # First shuffle candidates so equal-score users appear in random fresh order on every refresh
+    random.shuffle(candidates)
 
     # Sort candidates: Active Spotlight Boost users first, then Premium users, then sub-sorted by recommendation score (descending)
     candidates.sort(

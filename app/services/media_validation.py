@@ -5,7 +5,7 @@ from PIL import Image, ImageFile, ImageOps, UnidentifiedImageError
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-MAX_IMAGE_BYTES = 8 * 1024 * 1024  # 8MB
+MAX_IMAGE_BYTES = 20 * 1024 * 1024  # 20MB
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
 MAX_DIMENSION = 1600
 JPEG_QUALITY = 82
