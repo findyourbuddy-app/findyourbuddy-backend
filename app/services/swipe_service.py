@@ -151,9 +151,16 @@ def list_swipe_candidates(
     if is_default_query:
         cached_ids = CacheService.get_cached_candidates(swiper_id, event_id)
         if cached_ids is not None:
-            users = db.query(User).filter(User.id.in_(cached_ids)).all()
+            already_swiped_set = set(
+                row[0]
+                for row in db.query(Swipe.target_id)
+                .filter(Swipe.swiper_id == swiper_id, Swipe.event_id == event_id)
+                .all()
+            )
+            fresh_cached_ids = [uid for uid in cached_ids if uid not in already_swiped_set and uid != swiper_id]
+            users = db.query(User).filter(User.id.in_(fresh_cached_ids), User.is_active.is_(True)).all()
             user_map = {user.id: user for user in users}
-            return [user_map[uid] for uid in cached_ids if uid in user_map]
+            return [user_map[uid] for uid in fresh_cached_ids if uid in user_map]
 
     if not is_premium(db, swiper_id):
         min_age = max_age = max_distance_km = gender_preference = university = zodiac_sign = min_trust_score = None
