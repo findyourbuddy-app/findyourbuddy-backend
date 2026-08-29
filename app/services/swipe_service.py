@@ -68,35 +68,58 @@ def _already_swiped(db: Session, swiper_id: int, target_id: int, event_id: int |
 
 
 def get_swipe_quota(db: Session, swiper_id: int) -> dict:
+    swiper = db.get(User, swiper_id)
     premium = is_premium(db, swiper_id)
     settings = get_settings()
-    super_like_limit = settings.premium_daily_super_like_limit if premium else settings.daily_super_like_limit
+    base_super_limit = (
+        settings.premium_daily_super_like_limit if premium else settings.daily_super_like_limit
+    )
+    extra_super_likes = swiper.extra_super_likes if swiper else 0
+    bonus_swipe_credits = swiper.bonus_swipe_credits if swiper else 0
+
+    likes_today = _likes_made_today(db, swiper_id)
+    supers_today = _swipes_made_today(db, swiper_id, SwipeDirection.SUPER_LIKE)
+
+    # limit = what's been used today + what can still be used (free allowance
+    # left today + the store-purchased balance), so purchases show up live.
+    super_like_limit = supers_today + max(0, base_super_limit - supers_today) + extra_super_likes
+    swipe_limit = (
+        None
+        if premium
+        else likes_today + max(0, settings.daily_swipe_limit - likes_today) + bonus_swipe_credits
+    )
     return {
         "is_premium": premium,
-        "swipes_used_today": _likes_made_today(db, swiper_id),
-        "swipe_limit": None if premium else settings.daily_swipe_limit,
-        "super_likes_used_today": _swipes_made_today(db, swiper_id, SwipeDirection.SUPER_LIKE),
+        "swipes_used_today": likes_today,
+        "swipe_limit": swipe_limit,
+        "super_likes_used_today": supers_today,
         "super_like_limit": super_like_limit,
     }
 
 
 def record_swipe(db: Session, swiper_id: int, data: SwipeCreate) -> Swipe:
+    swiper = db.get(User, swiper_id)
     premium = is_premium(db, swiper_id)
     settings = get_settings()
+    extra_super_likes = swiper.extra_super_likes if swiper else 0
+    bonus_swipe_credits = swiper.bonus_swipe_credits if swiper else 0
 
-    if (
-        data.direction != SwipeDirection.PASS
-        and not premium
-        and _likes_made_today(db, swiper_id) >= settings.daily_swipe_limit
-    ):
-        raise DailySwipeLimitExceededError(swiper_id)
+    consume_bonus_swipe = False
+    if data.direction != SwipeDirection.PASS and not premium:
+        likes_today = _likes_made_today(db, swiper_id)
+        if likes_today >= settings.daily_swipe_limit and bonus_swipe_credits <= 0:
+            raise DailySwipeLimitExceededError(swiper_id)
+        consume_bonus_swipe = likes_today >= settings.daily_swipe_limit
 
+    consume_extra_super = False
     if data.direction == SwipeDirection.SUPER_LIKE:
-        super_like_limit = (
+        base_super_limit = (
             settings.premium_daily_super_like_limit if premium else settings.daily_super_like_limit
         )
-        if _swipes_made_today(db, swiper_id, SwipeDirection.SUPER_LIKE) >= super_like_limit:
+        supers_today = _swipes_made_today(db, swiper_id, SwipeDirection.SUPER_LIKE)
+        if supers_today >= base_super_limit and extra_super_likes <= 0:
             raise DailySuperLikeLimitExceededError(swiper_id)
+        consume_extra_super = supers_today >= base_super_limit
 
     if is_blocked(db, swiper_id, data.target_id):
         raise BlockedUserError(data.target_id)
@@ -109,6 +132,10 @@ def record_swipe(db: Session, swiper_id: int, data: SwipeCreate) -> Swipe:
 
     swipe = Swipe(swiper_id=swiper_id, **data.model_dump())
     db.add(swipe)
+    if swiper and consume_extra_super:
+        swiper.extra_super_likes -= 1
+    if swiper and consume_bonus_swipe:
+        swiper.bonus_swipe_credits -= 1
     db.commit()
     db.refresh(swipe)
 

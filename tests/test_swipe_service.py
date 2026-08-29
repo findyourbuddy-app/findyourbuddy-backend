@@ -19,6 +19,7 @@ from app.services.swipe_service import (
     DailySuperLikeLimitExceededError,
     DailySwipeLimitExceededError,
     DuplicateSwipeError,
+    get_swipe_quota,
     list_incoming_likes,
     list_swipe_candidates,
     record_swipe,
@@ -179,6 +180,80 @@ def test_record_swipe_super_like_gets_higher_limit_for_premium(
         swiper_id,
         SwipeCreate(target_id=target_ids[1], event_id=event_id, direction=SwipeDirection.SUPER_LIKE),
     )
+
+    get_settings.cache_clear()
+
+
+def test_purchased_extra_super_likes_raise_the_limit_and_are_consumed(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DAILY_SUPER_LIKE_LIMIT", "1")
+    get_settings.cache_clear()
+
+    swiper_id = _register(db_session, "swiper@example.com")
+    swiper = db_session.get(User, swiper_id)
+    swiper.extra_super_likes = 2
+    db_session.commit()
+    event_id = _create_event(db_session, swiper_id)
+    targets = [_register(db_session, f"t{i}@example.com") for i in range(4)]
+
+    assert get_swipe_quota(db_session, swiper_id)["super_like_limit"] == 3
+
+    for i in range(3):  # 1 free + 2 purchased
+        record_swipe(
+            db_session,
+            swiper_id,
+            SwipeCreate(target_id=targets[i], event_id=event_id, direction=SwipeDirection.SUPER_LIKE),
+        )
+
+    db_session.refresh(swiper)
+    assert swiper.extra_super_likes == 0
+
+    with pytest.raises(DailySuperLikeLimitExceededError):
+        record_swipe(
+            db_session,
+            swiper_id,
+            SwipeCreate(target_id=targets[3], event_id=event_id, direction=SwipeDirection.SUPER_LIKE),
+        )
+
+    get_settings.cache_clear()
+
+
+def test_purchased_bonus_swipe_credits_raise_the_daily_like_limit(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DAILY_SWIPE_LIMIT", "1")
+    get_settings.cache_clear()
+
+    swiper_id = _register(db_session, "swiper@example.com")
+    swiper = db_session.get(User, swiper_id)
+    swiper.bonus_swipe_credits = 1
+    db_session.commit()
+    event_id = _create_event(db_session, swiper_id)
+    targets = [_register(db_session, f"t{i}@example.com") for i in range(3)]
+
+    assert get_swipe_quota(db_session, swiper_id)["swipe_limit"] == 2
+
+    record_swipe(
+        db_session,
+        swiper_id,
+        SwipeCreate(target_id=targets[0], event_id=event_id, direction=SwipeDirection.LIKE),
+    )
+    record_swipe(
+        db_session,
+        swiper_id,
+        SwipeCreate(target_id=targets[1], event_id=event_id, direction=SwipeDirection.LIKE),
+    )
+
+    db_session.refresh(swiper)
+    assert swiper.bonus_swipe_credits == 0
+
+    with pytest.raises(DailySwipeLimitExceededError):
+        record_swipe(
+            db_session,
+            swiper_id,
+            SwipeCreate(target_id=targets[2], event_id=event_id, direction=SwipeDirection.LIKE),
+        )
 
     get_settings.cache_clear()
 
