@@ -9,6 +9,7 @@ from app.models.match import Match
 from app.models.match_feedback import MatchFeedback
 from app.models.notification import Notification
 from app.models.user import User
+from app.services.trust_service import recompute_trust_score
 
 
 class MatchNotFoundError(Exception):
@@ -75,10 +76,7 @@ def submit_feedback(
     db.refresh(feedback)
 
     if met_in_person is True and not was_confirmed:
-        rated_user = db.get(User, feedback.rated_id)
-        if rated_user is not None:
-            rated_user.trust_score += 1
-            db.commit()
+        recompute_trust_score(db, feedback.rated_id)
 
     return feedback
 
@@ -122,7 +120,15 @@ def send_pending_feedback_notifications(db: Session, sender: NotificationSender)
                 )
             )
             sender.send(user_id, title, body)
-            db.add(Notification(user_id=user_id, title=title, body=body))
+            db.add(Notification(
+                user_id=user_id,
+                title=title,
+                body=body,
+                match_id=match.id,
+                event_id=match.event_id,
+                notification_type="match_feedback",
+                data={"match_id": match.id, "event_id": match.event_id},
+            ))
             sent += 1
     db.commit()
     return sent

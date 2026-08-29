@@ -14,6 +14,7 @@ except ImportError:
 from app.config import get_settings
 from app.models.user import User
 from app.models.user_photo import UserPhoto
+from app.services.trust_service import recompute_trust_score
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,7 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
             user.verification_status = "verified"
             db.commit()
             db.refresh(user)
+            recompute_trust_score(db, user.id)
             try:
                 from app.core.notifications import get_notification_sender
                 from app.services.notification_service import notify_photo_verification_result
@@ -186,6 +188,7 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
                 user.verification_status = "verified"
                 db.commit()
                 db.refresh(user)
+                recompute_trust_score(db, user.id)
                 try:
                     from app.core.notifications import get_notification_sender
                     from app.services.notification_service import notify_photo_verification_result
@@ -201,6 +204,7 @@ def verify_user_photo_with_vision(db: Session, user: User, selfie_photo_url: str
                 user.verification_status = "rejected"
                 db.commit()
                 db.refresh(user)
+                recompute_trust_score(db, user.id)
                 try:
                     from app.core.notifications import get_notification_sender
                     from app.services.notification_service import notify_photo_verification_result

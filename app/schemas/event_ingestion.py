@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class EventIngestPayload(BaseModel):
@@ -15,6 +15,16 @@ class EventIngestPayload(BaseModel):
     starts_at: datetime
     source_url: str | None = None
     image_url: str | None = None
+
+    @field_validator("starts_at")
+    @classmethod
+    def _starts_at_to_naive_utc(cls, v: datetime) -> datetime:
+        # DB column is timezone-naive and the codebase reads naive datetimes as
+        # UTC. Normalize an offset-aware value so an event's date/time doesn't
+        # shift (or roll to the next day) when the app parses it back.
+        if v.tzinfo is not None:
+            return v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
     is_paid: bool = False
 
 

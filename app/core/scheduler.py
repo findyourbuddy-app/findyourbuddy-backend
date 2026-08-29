@@ -10,6 +10,7 @@ from app.services.auth_service import delete_expired_reset_tokens
 from app.services.bookmark_service import delete_past_event_bookmarks
 from app.services.event_service import apply_no_show_penalties, delete_expired_events
 from app.services.match_feedback_service import send_pending_feedback_notifications
+from app.services.trust_service import recompute_all_active_trust_scores
 from app.services.user_service import update_trust_suspensions
 
 logger = logging.getLogger(__name__)
@@ -29,15 +30,18 @@ def run_cleanup_jobs(db: Session | None = None) -> dict[str, int]:
             session, get_notification_sender(session)
         )
         no_shows_penalized = apply_no_show_penalties(session)
+        trust_scores_recomputed = recompute_all_active_trust_scores(session)
         accounts_suspended = update_trust_suspensions(session)
         logger.info(
             "cleanup job ran deleted_bookmarks=%s deleted_events=%s deleted_tokens=%s "
-            "feedback_notifications_sent=%s no_shows_penalized=%s accounts_suspended=%s",
+            "feedback_notifications_sent=%s no_shows_penalized=%s trust_scores_recomputed=%s "
+            "accounts_suspended=%s",
             deleted_bookmarks,
             deleted_events,
             deleted_tokens,
             feedback_notifications_sent,
             no_shows_penalized,
+            trust_scores_recomputed,
             accounts_suspended,
         )
         return {
@@ -46,6 +50,7 @@ def run_cleanup_jobs(db: Session | None = None) -> dict[str, int]:
             "deleted_tokens": deleted_tokens,
             "feedback_notifications_sent": feedback_notifications_sent,
             "no_shows_penalized": no_shows_penalized,
+            "trust_scores_recomputed": trust_scores_recomputed,
             "accounts_suspended": accounts_suspended,
         }
     finally:

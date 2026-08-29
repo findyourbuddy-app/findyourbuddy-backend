@@ -87,20 +87,25 @@ def test_submit_feedback_raises_for_non_participant(db_session: Session) -> None
         submit_feedback(db_session, match_id, outsider_id, True)
 
 
-def test_submit_feedback_true_increments_rated_user_trust_score(db_session: Session) -> None:
+def test_submit_feedback_true_raises_rated_user_trust_score(db_session: Session) -> None:
+    from app.config import get_settings
+
     match_id, user_a, user_b = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
+    s = get_settings()
 
     submit_feedback(db_session, match_id, user_a, True)
 
-    assert db_session.get(User, user_b).trust_score == 51
+    assert db_session.get(User, user_b).trust_score == s.trust_base_score + s.trust_meetup_points_each
 
 
-def test_submit_feedback_false_does_not_increment_trust_score(db_session: Session) -> None:
+def test_submit_feedback_false_leaves_trust_score_at_base(db_session: Session) -> None:
+    from app.config import get_settings
+
     match_id, user_a, user_b = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
 
     submit_feedback(db_session, match_id, user_a, False)
 
-    assert db_session.get(User, user_b).trust_score == 50
+    assert db_session.get(User, user_b).trust_score == get_settings().trust_base_score
 
 
 def test_submit_feedback_marks_needs_feedback_false(db_session: Session) -> None:
@@ -114,12 +119,15 @@ def test_submit_feedback_marks_needs_feedback_false(db_session: Session) -> None
 
 
 def test_submit_feedback_twice_does_not_double_count_trust_score(db_session: Session) -> None:
+    from app.config import get_settings
+
     match_id, user_a, user_b = _make_match(db_session, datetime.now(timezone.utc) - timedelta(hours=1))
+    s = get_settings()
 
     submit_feedback(db_session, match_id, user_a, True)
     submit_feedback(db_session, match_id, user_a, True)
 
-    assert db_session.get(User, user_b).trust_score == 51
+    assert db_session.get(User, user_b).trust_score == s.trust_base_score + s.trust_meetup_points_each
 
 
 def test_send_pending_feedback_notifications_notifies_both_participants_once(

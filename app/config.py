@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     daily_swipe_limit: int = 10
     daily_super_like_limit: int = 1
     premium_daily_super_like_limit: int = 5
+    # UTC hour the like / super-like allowance resets. 21 == 00:00 in Turkey
+    # (UTC+3), so the daily reset lands at local midnight.
+    daily_quota_reset_hour_utc: int = 21
     weekly_event_creation_limit: int = 3
     match_common_interest_weight: float = 0.6
     match_distance_weight: float = 0.4
@@ -124,10 +127,29 @@ class Settings(BaseSettings):
     event_retention_days: float = 0.25
     scheduler_interval_hours: float = 6.0
 
+    # Trust score is a 0-100 value recomputed from a user's real signals (see
+    # trust_service.recompute_trust_score) -- never an unbounded running total.
+    trust_base_score: int = 30
+    trust_photo_verified_points: int = 25
+    trust_phone_verified_points: int = 8
+    trust_email_verified_points: int = 5
+    trust_attendance_max_points: int = 15
+    trust_rating_swing_points: int = 12  # +/- at a 5-star / 1-star average
+    trust_rating_min_count: int = 2      # ratings received before they count
+    trust_meetup_points_each: int = 2
+    trust_meetup_max_points: int = 8
+    trust_no_show_penalty_each: int = 5
+    trust_no_show_max_penalty: int = 20
+    trust_report_reviewed_penalty: int = 10
+    trust_report_pending_penalty: int = 3
+    trust_report_max_penalty: int = 30
+    trust_block_penalty_each: int = 2
+    trust_block_max_penalty: int = 10
+
     # Accounts are suspended (is_active=False) once trust_score has stayed
     # below the threshold for this many consecutive days -- not on a single
     # low reading, so one bad night doesn't nuke an otherwise good account.
-    trust_score_suspension_threshold: int = -5
+    trust_score_suspension_threshold: int = 15
     trust_score_suspension_grace_days: int = 14
 
     geocoding_base_url: str = "https://nominatim.openstreetmap.org"

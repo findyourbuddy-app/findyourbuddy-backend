@@ -343,6 +343,23 @@ def test_list_swipe_candidates_excludes_self_and_already_swiped(db_session: Sess
     assert remaining_id in candidate_ids
 
 
+def test_list_swipe_candidates_returns_empty_once_everyone_is_swiped(db_session: Session) -> None:
+    swiper_id = _register(db_session, "swiper@example.com")
+    other_id = _register(db_session, "other@example.com")
+    event_id = _create_event(db_session, swiper_id)
+    join_event(db_session, event_id, other_id)
+
+    record_swipe(
+        db_session,
+        swiper_id,
+        SwipeCreate(target_id=other_id, event_id=event_id, direction=SwipeDirection.PASS),
+    )
+
+    candidates = list_swipe_candidates(db_session, event_id=event_id, swiper_id=swiper_id)
+
+    assert candidates == []
+
+
 def test_record_swipe_rejects_blocked_user(db_session: Session) -> None:
     swiper_id = _register(db_session, "swiper@example.com")
     blocked_id = _register(db_session, "blocked@example.com")

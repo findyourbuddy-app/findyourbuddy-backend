@@ -42,6 +42,7 @@ from app.services.event_service import (
     list_attending_events,
     list_events,
 )
+from app.services.trust_service import recompute_trust_score
 from app.services.media_service import MediaStorage, get_media_storage
 from app.services.media_validation import ImageTooLargeError, InvalidImageError, validate_image
 from app.services.payment_service import claim_payment_callback
@@ -723,18 +724,11 @@ def rate_event(
     )
     db.add(rating_record)
 
-    # Impact Host / Creator Trust Score if event was created by a user
+    # Recompute the host's trust score off the new rating (and everything else).
     creator_trust_score = None
     if event.creator_id:
-        creator = db.get(User, event.creator_id)
-        if creator:
-            if payload.rating >= 4:
-                boost = 3 if payload.rating == 5 else 2
-                creator.trust_score += boost
-            elif payload.rating <= 2:
-                penalty = 4 if payload.rating == 1 else 2
-                creator.trust_score -= penalty
-            creator_trust_score = creator.trust_score
+        db.flush()
+        creator_trust_score = recompute_trust_score(db, event.creator_id, commit=False)
 
     db.commit()
     return {

@@ -31,6 +31,8 @@ class SwipeQuota(BaseModel):
     swipe_limit: int | None
     super_likes_used_today: int
     super_like_limit: int
+    # UTC wall-clock instant the daily allowance next resets to zero.
+    resets_at: datetime
 
 
 class LikerRead(BaseModel):

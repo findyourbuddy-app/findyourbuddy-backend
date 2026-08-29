@@ -15,11 +15,10 @@ from app.models.swipe import Swipe
 from app.models.user import User
 from app.schemas.event import EventCreate
 from app.services.llm_moderation_service import moderate_new_event
+from app.services.trust_service import recompute_trust_score, recompute_trust_scores
 
 CHECK_IN_RADIUS_KM = 1.0
-CHECK_IN_TRUST_SCORE_BONUS = 1
 CHECK_IN_WINDOW_AFTER_HOURS = 8
-NO_SHOW_TRUST_SCORE_PENALTY = 1
 
 
 class WeeklyEventCreationLimitExceededError(Exception):
@@ -135,9 +134,8 @@ def check_in_to_event(
     attendance = join_event(db, event_id, user_id)
     if attendance.checked_in_at is None:
         attendance.checked_in_at = now
-        user = db.get(User, user_id)
-        if user is not None:
-            user.trust_score += CHECK_IN_TRUST_SCORE_BONUS
+        db.flush()
+        recompute_trust_score(db, user_id, commit=False)
         db.commit()
         db.refresh(attendance)
     return attendance
@@ -164,15 +162,13 @@ def apply_no_show_penalties(db: Session) -> int:
         return 0
 
     user_ids = {a.user_id for a in attendances}
-    users_by_id = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
 
     now = utcnow()
     for attendance in attendances:
-        user = users_by_id.get(attendance.user_id)
-        if user is not None:
-            user.trust_score -= NO_SHOW_TRUST_SCORE_PENALTY
         attendance.no_show_penalized_at = now
 
+    db.flush()
+    recompute_trust_scores(db, list(user_ids))
     db.commit()
     return len(attendances)
 

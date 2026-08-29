@@ -54,19 +54,24 @@ def test_validate_image_rejects_oversized_file() -> None:
         validate_image(io.BytesIO(oversized))
 
 
-def test_validate_chat_image_returns_original_bytes_untouched() -> None:
+def test_validate_chat_image_reencodes_jpeg_keeping_dimensions() -> None:
     data = _image_bytes("JPEG")
 
     result, ext = validate_chat_image(io.BytesIO(data))
 
-    assert result == data
+    # Chat photos are always normalized to optimized JPEG (size win), so the
+    # bytes change even for a JPEG input -- only the pixel dimensions are kept.
     assert ext == ".jpg"
+    out = Image.open(io.BytesIO(result))
+    assert out.format == "JPEG"
+    assert out.size == (2, 2)
 
 
-def test_validate_chat_image_maps_extension_by_format() -> None:
-    _, ext = validate_chat_image(io.BytesIO(_image_bytes("PNG")))
+def test_validate_chat_image_transcodes_png_to_jpeg() -> None:
+    result, ext = validate_chat_image(io.BytesIO(_image_bytes("PNG")))
 
-    assert ext == ".png"
+    assert ext == ".jpg"
+    assert Image.open(io.BytesIO(result)).format == "JPEG"
 
 
 def test_validate_chat_image_rejects_disallowed_format() -> None:

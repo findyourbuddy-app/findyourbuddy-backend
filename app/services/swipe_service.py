@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import random
 from app.core.datetime_utils import utcnow
 
@@ -35,8 +35,23 @@ class BlockedUserError(Exception):
     pass
 
 
+def _quota_day_start() -> datetime:
+    """Start of the current quota day in UTC. The reset lands at
+    `daily_quota_reset_hour_utc` (default 03:00 UTC = 00:00 in Turkey)."""
+    reset_hour = get_settings().daily_quota_reset_hour_utc % 24
+    now = utcnow()
+    start = now.replace(hour=reset_hour, minute=0, second=0, microsecond=0)
+    if now < start:
+        start -= timedelta(days=1)
+    return start
+
+
+def _quota_next_reset() -> datetime:
+    return _quota_day_start() + timedelta(days=1)
+
+
 def _swipes_made_today(db: Session, swiper_id: int, direction: SwipeDirection | None = None) -> int:
-    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = _quota_day_start()
     query = db.query(Swipe).filter(Swipe.swiper_id == swiper_id, Swipe.created_at >= today_start)
     if direction is not None:
         query = query.filter(Swipe.direction == direction)
@@ -46,7 +61,7 @@ def _swipes_made_today(db: Session, swiper_id: int, direction: SwipeDirection | 
 def _likes_made_today(db: Session, swiper_id: int) -> int:
     """Passes are free and unlimited; only LIKE/SUPER_LIKE count against the
     daily allowance (the super-like sub-quota is enforced separately)."""
-    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = _quota_day_start()
     return (
         db.query(Swipe)
         .filter(
@@ -80,6 +95,8 @@ def get_swipe_quota(db: Session, swiper_id: int) -> dict:
     likes_today = _likes_made_today(db, swiper_id)
     supers_today = _swipes_made_today(db, swiper_id, SwipeDirection.SUPER_LIKE)
 
+    resets_at = _quota_next_reset()
+
     # limit = what's been used today + what can still be used (free allowance
     # left today + the store-purchased balance), so purchases show up live.
     super_like_limit = supers_today + max(0, base_super_limit - supers_today) + extra_super_likes
@@ -94,6 +111,7 @@ def get_swipe_quota(db: Session, swiper_id: int) -> dict:
         "swipe_limit": swipe_limit,
         "super_likes_used_today": supers_today,
         "super_like_limit": super_like_limit,
+        "resets_at": resets_at,
     }
 
 
@@ -231,7 +249,7 @@ def list_swipe_candidates(
             already_swiped_set = set(
                 row[0]
                 for row in db.query(Swipe.target_id)
-                .filter(Swipe.swiper_id == swiper_id, Swipe.event_id.is_(None))
+                .filter(Swipe.swiper_id == swiper_id)
                 .all()
             )
             fresh_cached_ids = [uid for uid in cached_ids if uid not in already_swiped_set and uid != swiper_id]
@@ -244,11 +262,10 @@ def list_swipe_candidates(
         min_age = max_age = max_distance_km = gender_preference = university = zodiac_sign = min_trust_score = None
         is_verified_only = has_voice_note = False
 
+    # A swipe on someone hides them from EVERY deck (general browse, any event,
+    # any tab) -- not just the context it happened in. The per-event scoping
+    # used to be here made the same person resurface tab after tab.
     already_swiped_query = db.query(Swipe.target_id).filter(Swipe.swiper_id == swiper_id)
-    if event_id and event_id > 0:
-        already_swiped_query = already_swiped_query.filter(Swipe.event_id == event_id)
-    else:
-        already_swiped_query = already_swiped_query.filter(Swipe.event_id.is_(None))
 
     excluded_ids = {swiper_id, *blocked_user_ids(db, swiper_id)}
 
@@ -264,17 +281,8 @@ def list_swipe_candidates(
     )
     candidates = unswiped_q.all()
 
-    # 2. Secondary fallback: RECYCLE all active users ONLY IF unswiped candidates are 0 (pool exhausted)
-    if not candidates:
-        recycled_q = db.query(User).filter(
-            User.id.notin_(excluded_ids),
-            User.is_active.is_(True),
-        )
-        recycled_q = _apply_user_filters(
-            recycled_q, event_id, db, min_age, max_age, gender_preference, university,
-            zodiac_sign, is_verified_only, has_voice_note, min_trust_score, looking_for
-        )
-        candidates = recycled_q.all()
+    # Once every candidate has been swiped the deck is genuinely empty -- return
+    # nothing rather than recycling already-swiped people back into the stack.
 
 
     if max_distance_km is not None:

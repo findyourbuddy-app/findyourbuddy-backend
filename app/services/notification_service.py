@@ -5,6 +5,48 @@ from app.core.notifications import NotificationSender
 from app.models.match import Match
 from app.models.message import Message
 from app.models.notification import Notification
+from app.models.user import User
+
+
+def _display_name(db: Session, user_id: int) -> str | None:
+    user = db.get(User, user_id)
+    return user.display_name if user is not None else None
+
+
+def notify_double_buddy(
+    db: Session,
+    sender: NotificationSender,
+    recipient_id: int,
+    kind: str,
+    double_buddy_id: int,
+    other_name: str,
+) -> None:
+    """kind: "invite" | "accepted" | "rejected"."""
+    copy = {
+        "invite": (
+            "Double Buddy Daveti 👯",
+            f"{other_name} seni Double Buddy ekibine davet etti. Kabul ediyor musun?",
+        ),
+        "accepted": (
+            "Double Buddy Kuruldu 🎉",
+            f"{other_name} Double Buddy davetini kabul etti. Artık ikili moddasınız!",
+        ),
+        "rejected": (
+            "Double Buddy Daveti",
+            f"{other_name} şu an Double Buddy olmak istemiyor.",
+        ),
+    }
+    title, body = copy[kind]
+    data = {"double_buddy_id": double_buddy_id, "notification_type": f"double_buddy_{kind}"}
+    sender.send(recipient_id, title, body, data=data)
+    db.add(Notification(
+        user_id=recipient_id,
+        title=title,
+        body=body,
+        notification_type=f"double_buddy_{kind}",
+        data={"double_buddy_id": double_buddy_id},
+    ))
+    db.commit()
 
 
 def notify_new_like(db: Session, target_user_id: int) -> None:
@@ -27,7 +69,11 @@ def notify_match_created(db: Session, sender: NotificationSender, match: Match) 
             user_id=user_id,
             match_id=match.id,
             notification_type="match",
-            data={"match_id": match.id, "other_user_id": other_id},
+            data={
+                "match_id": match.id,
+                "other_user_id": other_id,
+                "other_user_name": _display_name(db, other_id),
+            },
             title=title,
             body=body,
         ))
@@ -42,7 +88,12 @@ def notify_new_message(db: Session, sender: NotificationSender, message: Message
         user_id=recipient_id,
         match_id=message.match_id,
         notification_type="message",
-        data={"match_id": message.match_id, "sender_id": message.sender_id},
+        data={
+            "match_id": message.match_id,
+            "sender_id": message.sender_id,
+            "other_user_id": message.sender_id,
+            "other_user_name": _display_name(db, message.sender_id),
+        },
         title=title,
         body=body,
     ))
@@ -62,12 +113,18 @@ def notify_new_message_bulk(
     else:
         for rid in recipient_ids:
             sender.send(rid, title, body)
+    sender_name = _display_name(db, message.sender_id)
     for rid in recipient_ids:
         db.add(Notification(
             user_id=rid,
             match_id=message.match_id,
             notification_type="message",
-            data={"match_id": message.match_id, "sender_id": message.sender_id},
+            data={
+                "match_id": message.match_id,
+                "sender_id": message.sender_id,
+                "other_user_id": message.sender_id,
+                "other_user_name": sender_name,
+            },
             title=title,
             body=body,
         ))
