@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.datetime_utils import utcnow
 from app.core.deps import get_current_user
 from app.database import get_db
 from app.models.event import Event
+from app.models.match import Match
 from app.models.match_feedback import MatchFeedback
 from app.models.user import User
 from app.schemas.match import MatchRead
@@ -117,3 +119,51 @@ def delete_match(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found") from exc
     except UnmatchForbiddenError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this match") from exc
+
+
+@router.get("/by-event/{event_id}", response_model=MatchRead)
+def get_match_by_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MatchRead:
+    match = (
+        db.query(Match)
+        .filter(
+            Match.event_id == event_id,
+            Match.is_active.is_(True),
+            or_(Match.user_a_id == current_user.id, Match.user_b_id == current_user.id),
+        )
+        .first()
+    )
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No match found for this event")
+
+    other_user_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
+    other_user = db.get(User, other_user_id)
+    if not other_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match user not found")
+
+    from app.models.message import Message
+    last_message = (
+        db.query(Message)
+        .filter(Message.match_id == match.id)
+        .order_by(Message.created_at.desc())
+        .first()
+    )
+
+    return MatchRead(
+        id=match.id,
+        event_id=match.event_id,
+        event_title=match.event.title if match.event else None,
+        event_category=match.event.category if match.event else None,
+        event_is_group=match.event.is_group_event if match.event else False,
+        event_creator_id=match.event.creator_id if match.event else None,
+        user_a_id=match.user_a_id,
+        user_b_id=match.user_b_id,
+        score=match.score,
+        created_at=match.created_at,
+        other_user=UserPublic.model_validate(other_user),
+        last_message=MessageRead.model_validate(last_message) if last_message else None,
+        needs_feedback=False,
+    )
