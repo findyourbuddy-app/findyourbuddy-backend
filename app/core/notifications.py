@@ -13,18 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 class NotificationSender(Protocol):
-    def send(self, user_id: int, title: str, body: str) -> None:
+    def send(self, user_id: int, title: str, body: str, data: dict | None = None) -> None:
         """Sends a push notification to a user."""
         ...
 
 
 class LoggingNotificationSender:
-    def send(self, user_id: int, title: str, body: str) -> None:
-        logger.info("notification user_id=%s title=%r body=%r", user_id, title, body)
+    def send(self, user_id: int, title: str, body: str, data: dict | None = None) -> None:
+        logger.info("notification user_id=%s title=%r body=%r data=%r", user_id, title, body, data)
 
-    def send_bulk(self, user_ids: list[int], title: str, body: str) -> None:
+    def send_bulk(self, user_ids: list[int], title: str, body: str, data: dict | None = None) -> None:
         for user_id in user_ids:
-            self.send(user_id, title, body)
+            self.send(user_id, title, body, data)
 
 
 class ExpoPushNotificationSender:
@@ -35,7 +35,7 @@ class ExpoPushNotificationSender:
     def __init__(self, db: Session) -> None:
         self._db = db
 
-    def send(self, user_id: int, title: str, body: str) -> None:
+    def send(self, user_id: int, title: str, body: str, data: dict | None = None) -> None:
         tokens = [
             device_token.token
             for device_token in self._db.query(DeviceToken)
@@ -45,13 +45,13 @@ class ExpoPushNotificationSender:
         if not tokens:
             return
 
-        messages = [{"to": token, "title": title, "body": body} for token in tokens]
+        messages = [{"to": token, "title": title, "body": body, "data": data or {}} for token in tokens]
         try:
             httpx.post(get_settings().expo_push_api_url, json=messages, timeout=10.0)
         except httpx.HTTPError:
             logger.warning("failed to send push notification user_id=%s", user_id)
 
-    def send_bulk(self, user_ids: list[int], title: str, body: str) -> None:
+    def send_bulk(self, user_ids: list[int], title: str, body: str, data: dict | None = None) -> None:
         """Fetches all device tokens for the given users in one query and
         sends a single batched request to the Expo push API."""
         if not user_ids:
@@ -64,7 +64,7 @@ class ExpoPushNotificationSender:
         ]
         if not tokens:
             return
-        messages = [{"to": token, "title": title, "body": body} for token in tokens]
+        messages = [{"to": token, "title": title, "body": body, "data": data or {}} for token in tokens]
         try:
             httpx.post(get_settings().expo_push_api_url, json=messages, timeout=10.0)
         except httpx.HTTPError:

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.deps import get_current_user
+from app.core.notifications import NotificationSender, get_notification_sender
 from app.core.rate_limit import event_writes_rate_limit, limiter
 from app.database import get_db
 from app.models.event import Event
@@ -453,6 +454,7 @@ def attend_event(
     event_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sender: NotificationSender = Depends(get_notification_sender),
 ) -> EventRead:
     event = get_event(db, event_id)
     if event is None:
@@ -460,10 +462,13 @@ def attend_event(
     attendance = join_event(db, event_id, current_user.id)
     
     if event.creator_id and event.creator_id != current_user.id:
+        title = "Yeni Katılım İsteği! 🎉"
+        body = f"{current_user.display_name}, '{event.title}' etkinliğine katılmak istiyor."
+        sender.send(event.creator_id, title, body, data={"event_id": event.id, "notification_type": "event_request"})
         db.add(Notification(
             user_id=event.creator_id,
-            title="Yeni Katılım İsteği!",
-            body=f"{current_user.display_name}, '{event.title}' etkinliğine katılmak istiyor.",
+            title=title,
+            body=body,
             event_id=event.id,
             notification_type="event_request",
             data={"event_id": event.id},
@@ -559,6 +564,7 @@ def handle_join_request(
     data: JoinRequestAction,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sender: NotificationSender = Depends(get_notification_sender),
 ) -> EventRead:
     event = db.get(Event, event_id)
     if event is None:
@@ -594,12 +600,17 @@ def handle_join_request(
     else:
         attendance.status = "rejected"
 
-    status_label = "onaylandı" if data.approved else "reddedildi"
+    status_label = "onaylandı 🎉" if data.approved else "reddedildi"
+    title = "Grup Katılım Sonucu"
+    body = f"'{event.title}' grubuna katılım isteğin {status_label}."
+    sender.send(user_id, title, body, data={"event_id": event.id, "notification_type": "event_response"})
     db.add(Notification(
         user_id=user_id,
-        title="Grup Katılım Sonucu",
-        body=f"'{event.title}' grubuna katılım isteğin {status_label}.",
+        title=title,
+        body=body,
         event_id=event.id,
+        notification_type="event_response",
+        data={"event_id": event.id},
     ))
     db.commit()
 
@@ -617,6 +628,7 @@ def approve_all_join_requests(
     event_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sender: NotificationSender = Depends(get_notification_sender),
 ) -> EventRead:
     event = db.get(Event, event_id)
     if event is None:
@@ -647,11 +659,16 @@ def approve_all_join_requests(
                 score=1.0,
                 is_active=True,
             ))
+        title = "Grup Katılım Sonucu"
+        body = f"'{event.title}' grubuna katılım isteğin onaylandı. 🎉"
+        sender.send(attendance.user_id, title, body, data={"event_id": event.id, "notification_type": "event_response"})
         db.add(Notification(
             user_id=attendance.user_id,
-            title="Grup Katılım Sonucu",
-            body=f"'{event.title}' grubuna katılım isteğin onaylandı.",
+            title=title,
+            body=body,
             event_id=event.id,
+            notification_type="event_response",
+            data={"event_id": event.id},
         ))
 
     db.commit()
