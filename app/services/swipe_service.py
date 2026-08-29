@@ -119,6 +119,54 @@ def record_swipe(db: Session, swiper_id: int, data: SwipeCreate) -> Swipe:
     return swipe
 
 
+def _apply_user_filters(
+    query,
+    event_id: int | None,
+    db: Session,
+    min_age: int | None,
+    max_age: int | None,
+    gender_preference: str | None,
+    university: str | None,
+    zodiac_sign: str | None,
+    is_verified_only: bool,
+    has_voice_note: bool,
+    min_trust_score: int | None,
+    looking_for: str | None,
+):
+    if event_id and event_id > 0:
+        event = db.get(Event, event_id)
+        if event is not None:
+            attending_user_ids = db.query(EventAttendance.user_id).filter(
+                EventAttendance.event_id == event_id, EventAttendance.status.in_(["approved", "pending"])
+            )
+            valid_user_ids = set(uid for (uid,) in attending_user_ids.all())
+            if event.creator_id:
+                valid_user_ids.add(event.creator_id)
+            query = query.filter(User.id.in_(valid_user_ids))
+
+    if min_age is not None:
+        query = query.filter(User.age.is_not(None), User.age >= min_age)
+    if max_age is not None:
+        query = query.filter(User.age.is_not(None), User.age <= max_age)
+    if gender_preference and gender_preference.lower() in ("female", "male", "other"):
+        query = query.filter(User.gender == gender_preference)
+    if university:
+        query = query.filter(User.university.ilike(f"%{university.strip()}%"))
+    if zodiac_sign and zodiac_sign != "Tümü":
+        clean_zodiac = zodiac_sign.split()[0]
+        query = query.filter(User.zodiac_sign == clean_zodiac)
+    if is_verified_only:
+        query = query.filter(User.is_verified.is_(True))
+    if has_voice_note:
+        query = query.filter(User.voice_note_url.is_not(None))
+    if min_trust_score is not None and min_trust_score > 0:
+        query = query.filter(User.trust_score >= min_trust_score)
+    if looking_for and looking_for != "Tümü":
+        query = query.filter(User.looking_for.ilike(f"%{looking_for.strip()}%"))
+
+    return query
+
+
 def list_swipe_candidates(
     db: Session,
     event_id: int | None,
@@ -160,9 +208,10 @@ def list_swipe_candidates(
                 .all()
             )
             fresh_cached_ids = [uid for uid in cached_ids if uid not in already_swiped_set and uid != swiper_id]
-            users = db.query(User).filter(User.id.in_(fresh_cached_ids), User.is_active.is_(True)).all()
-            user_map = {user.id: user for user in users}
-            return [user_map[uid] for uid in fresh_cached_ids if uid in user_map]
+            if fresh_cached_ids:
+                users = db.query(User).filter(User.id.in_(fresh_cached_ids), User.is_active.is_(True)).all()
+                user_map = {user.id: user for user in users}
+                return [user_map[uid] for uid in fresh_cached_ids if uid in user_map]
 
     if not is_premium(db, swiper_id):
         min_age = max_age = max_distance_km = gender_preference = university = zodiac_sign = min_trust_score = None
@@ -176,44 +225,29 @@ def list_swipe_candidates(
 
     excluded_ids = {swiper_id, *blocked_user_ids(db, swiper_id)}
 
-    query = db.query(User).filter(
+    # 1. Primary query: UN-SWIPED candidates only!
+    unswiped_q = db.query(User).filter(
         User.id.notin_(already_swiped_query),
         User.id.notin_(excluded_ids),
         User.is_active.is_(True),
     )
+    unswiped_q = _apply_user_filters(
+        unswiped_q, event_id, db, min_age, max_age, gender_preference, university,
+        zodiac_sign, is_verified_only, has_voice_note, min_trust_score, looking_for
+    )
+    candidates = unswiped_q.all()
 
-    if event_id and event_id > 0:
-        event = db.get(Event, event_id)
-        if event is not None:
-            attending_user_ids = db.query(EventAttendance.user_id).filter(
-                EventAttendance.event_id == event_id, EventAttendance.status.in_(["approved", "pending"])
-            )
-            valid_user_ids = set(uid for (uid,) in attending_user_ids.all())
-            if event.creator_id:
-                valid_user_ids.add(event.creator_id)
-            query = query.filter(User.id.in_(valid_user_ids))
-
-    if min_age is not None:
-        query = query.filter(User.age.is_not(None), User.age >= min_age)
-    if max_age is not None:
-        query = query.filter(User.age.is_not(None), User.age <= max_age)
-    if gender_preference and gender_preference.lower() in ("female", "male", "other"):
-        query = query.filter(User.gender == gender_preference)
-    if university:
-        query = query.filter(User.university.ilike(f"%{university.strip()}%"))
-    if zodiac_sign and zodiac_sign != "Tümü":
-        clean_zodiac = zodiac_sign.split()[0]
-        query = query.filter(User.zodiac_sign == clean_zodiac)
-    if is_verified_only:
-        query = query.filter(User.is_verified.is_(True))
-    if has_voice_note:
-        query = query.filter(User.voice_note_url.is_not(None))
-    if min_trust_score is not None and min_trust_score > 0:
-        query = query.filter(User.trust_score >= min_trust_score)
-    if looking_for and looking_for != "Tümü":
-        query = query.filter(User.looking_for.ilike(f"%{looking_for.strip()}%"))
-
-    candidates = query.all()
+    # 2. Secondary fallback: RECYCLE all active users ONLY IF unswiped candidates are 0 (pool exhausted)
+    if not candidates:
+        recycled_q = db.query(User).filter(
+            User.id.notin_(excluded_ids),
+            User.is_active.is_(True),
+        )
+        recycled_q = _apply_user_filters(
+            recycled_q, event_id, db, min_age, max_age, gender_preference, university,
+            zodiac_sign, is_verified_only, has_voice_note, min_trust_score, looking_for
+        )
+        candidates = recycled_q.all()
 
 
     if max_distance_km is not None:
