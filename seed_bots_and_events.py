@@ -1,12 +1,20 @@
+import sys
+import os
 import random
 import uuid
 from datetime import datetime, timedelta
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from app.database import SessionLocal
 from app.models.user import User
 from app.models.user_photo import UserPhoto
 from app.models.event import Event
 from app.models.event_attendance import EventAttendance
-from app.core.security import get_password_hash
+from app.core.security import hash_password
 
 BOT_USERS_DATA = [
     {
@@ -251,8 +259,8 @@ EVENTS_DATA = [
 def seed_database():
     db = SessionLocal()
     try:
-        print("🌱 Seeding realistic bot users and user-created events...")
-        password_hash = get_password_hash("Password123!")
+        print("[SEED] Seeding realistic bot users, 1-on-1 events, group events, and system event attendances...")
+        password_hash = hash_password("Password123!")
 
         created_bots = []
         for bdata in BOT_USERS_DATA:
@@ -283,7 +291,6 @@ def seed_database():
                 )
                 db.add(user)
                 db.flush()
-                # Add default photo in photos table
                 photo = UserPhoto(user_id=user.id, photo_url=bdata["photo_url"], position=0)
                 db.add(photo)
                 created_bots.append(user)
@@ -291,15 +298,18 @@ def seed_database():
                 created_bots.append(existing)
 
         db.commit()
-        print(f"✅ {len(created_bots)} bot users ready!")
+        print(f"[OK] {len(created_bots)} bot users ready!")
+
+        now = datetime.utcnow()
+
+        # Fetch official system events without unnecessary UPDATE statement locks
+        system_events = db.query(Event).filter(Event.creator_id.is_(None)).limit(30).all()
+        print(f"[OK] {len(system_events)} official system events loaded!")
 
         # Create Events created by these bot users
         created_events = []
-        now = datetime.utcnow()
         for idx, edata in enumerate(EVENTS_DATA):
-            # Pick a creator bot
             creator = created_bots[idx % len(created_bots)]
-            # Event starts between tomorrow and 5 days later
             starts_at = now + timedelta(days=random.randint(1, 5), hours=random.randint(1, 8))
 
             existing_event = db.query(Event).filter(Event.title == edata["title"]).first()
@@ -327,40 +337,37 @@ def seed_database():
                 created_events.append(existing_event)
 
         db.commit()
-        print(f"✅ {len(created_events)} user-created events created!")
+        print(f"[OK] {len(created_events)} user-created events ready!")
 
-        # Add event attendances so events have active participants
+        # Add event attendances so both system events and user events have bot candidates
         attendance_count = 0
-        for ev in created_events:
-            # Add the creator as approved attendee
-            if ev.creator_id:
-                att_existing = db.query(EventAttendance).filter(
-                    EventAttendance.event_id == ev.id,
-                    EventAttendance.user_id == ev.creator_id
-                ).first()
-                if not att_existing:
-                    db.add(EventAttendance(event_id=ev.id, user_id=ev.creator_id, status="approved"))
+        all_events = system_events + created_events
+
+        existing_attendances = set(
+            db.query(EventAttendance.event_id, EventAttendance.user_id).all()
+        )
+
+        for ev in all_events:
+            if ev.creator_id and (ev.id, ev.creator_id) not in existing_attendances:
+                db.add(EventAttendance(event_id=ev.id, user_id=ev.creator_id, status="approved"))
+                existing_attendances.add((ev.id, ev.creator_id))
+                attendance_count += 1
+
+            # Join random bots as approved attendees so there are swipe candidates
+            other_bots = [b for b in created_bots if b.id != ev.creator_id]
+            sample_attendees = random.sample(other_bots, min(4, len(other_bots)))
+            for bot in sample_attendees:
+                if (ev.id, bot.id) not in existing_attendances:
+                    db.add(EventAttendance(event_id=ev.id, user_id=bot.id, status="approved"))
+                    existing_attendances.add((ev.id, bot.id))
                     attendance_count += 1
 
-            # Add 2-4 random bot users as attendees for group events
-            if ev.is_group_event:
-                other_bots = [b for b in created_bots if b.id != ev.creator_id]
-                sample_attendees = random.sample(other_bots, min(3, len(other_bots)))
-                for bot in sample_attendees:
-                    att_existing = db.query(EventAttendance).filter(
-                        EventAttendance.event_id == ev.id,
-                        EventAttendance.user_id == bot.id
-                    ).first()
-                    if not att_existing:
-                        db.add(EventAttendance(event_id=ev.id, user_id=bot.id, status="approved"))
-                        attendance_count += 1
-
         db.commit()
-        print(f"🎉 {attendance_count} event attendances registered! Seed completed successfully.")
+        print(f"[SUCCESS] {attendance_count} event attendances registered! Seed completed successfully.")
 
     except Exception as e:
         db.rollback()
-        print(f"❌ Error seeding database: {e}")
+        print(f"[ERROR] Error seeding database: {e}")
     finally:
         db.close()
 
