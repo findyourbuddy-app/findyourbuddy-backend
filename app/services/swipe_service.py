@@ -149,13 +149,13 @@ def list_swipe_candidates(
         and min_trust_score is None
     )
     
-    if is_default_query:
-        cached_ids = CacheService.get_cached_candidates(swiper_id, event_id)
+    if is_default_query and (not event_id or event_id == 0):
+        cached_ids = CacheService.get_cached_candidates(swiper_id, None)
         if cached_ids is not None:
             already_swiped_set = set(
                 row[0]
                 for row in db.query(Swipe.target_id)
-                .filter(Swipe.swiper_id == swiper_id, Swipe.event_id == event_id)
+                .filter(Swipe.swiper_id == swiper_id, Swipe.event_id.is_(None))
                 .all()
             )
             fresh_cached_ids = [uid for uid in cached_ids if uid not in already_swiped_set and uid != swiper_id]
@@ -167,13 +167,16 @@ def list_swipe_candidates(
         min_age = max_age = max_distance_km = gender_preference = university = zodiac_sign = min_trust_score = None
         is_verified_only = has_voice_note = False
 
-    already_swiped_target_ids = db.query(Swipe.target_id).filter(
-        Swipe.swiper_id == swiper_id, Swipe.event_id == event_id
-    )
+    already_swiped_query = db.query(Swipe.target_id).filter(Swipe.swiper_id == swiper_id)
+    if event_id and event_id > 0:
+        already_swiped_query = already_swiped_query.filter(Swipe.event_id == event_id)
+    else:
+        already_swiped_query = already_swiped_query.filter(Swipe.event_id.is_(None))
+
     excluded_ids = {swiper_id, *blocked_user_ids(db, swiper_id)}
 
     query = db.query(User).filter(
-        User.id.notin_(already_swiped_target_ids),
+        User.id.notin_(already_swiped_query),
         User.id.notin_(excluded_ids),
         User.is_active.is_(True),
     )
