@@ -104,6 +104,7 @@ def get_swipe_candidates(
     is_verified_only: bool | None = None,
     has_voice_note: bool | None = None,
     min_trust_score: int | None = None,
+    looking_for: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[UserRead]:
@@ -120,6 +121,7 @@ def get_swipe_candidates(
         is_verified_only=is_verified_only,
         has_voice_note=has_voice_note,
         min_trust_score=min_trust_score,
+        looking_for=looking_for,
     )
     event_titles = get_upcoming_own_event_titles(db, [c.id for c in candidates])
     return [

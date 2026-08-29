@@ -132,6 +132,7 @@ def list_swipe_candidates(
     is_verified_only: bool | None = None,
     has_voice_note: bool | None = None,
     min_trust_score: int | None = None,
+    looking_for: str | None = None,
 ) -> list[User]:
     swiper = db.get(User, swiper_id)
     if swiper is None:
@@ -209,6 +210,8 @@ def list_swipe_candidates(
         query = query.filter(User.voice_note_url.is_not(None))
     if min_trust_score is not None and min_trust_score > 0:
         query = query.filter(User.trust_score >= min_trust_score)
+    if looking_for and looking_for != "Tümü":
+        query = query.filter(User.looking_for.ilike(f"%{looking_for.strip()}%"))
 
     candidates = query.all()
 
