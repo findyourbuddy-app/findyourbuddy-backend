@@ -59,6 +59,7 @@ PURCHASE_ITEM_PRICES_TRY = {
 
 def _upload_validated_photo(file: UploadFile, storage: MediaStorage) -> str:
     try:
+        file.file.seek(0)
         data = validate_image(file.file)
     except InvalidImageError as exc:
         raise HTTPException(
@@ -74,6 +75,7 @@ def _upload_validated_photo(file: UploadFile, storage: MediaStorage) -> str:
 
 
 @router.get("/me", response_model=UserRead)
+@router.get("/me/", response_model=UserRead)
 def read_current_user(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
@@ -148,8 +150,24 @@ def upload_chat_media(
     return {"url": url}
 
 
-_ALLOWED_VOICE_MIMES = {"audio/m4a", "audio/mp4", "audio/aac", "audio/mpeg", "audio/ogg", "audio/webm"}
-_MAX_VOICE_BYTES = 5 * 1024 * 1024  # 5 MB
+_ALLOWED_VOICE_MIMES = {
+    "audio/m4a",
+    "audio/x-m4a",
+    "audio/mp4",
+    "audio/aac",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/ogg",
+    "audio/webm",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/3gpp",
+    "audio/amr",
+    "audio/caf",
+    "application/octet-stream",
+}
+_ALLOWED_VOICE_EXTS = {".m4a", ".mp3", ".wav", ".aac", ".caf", ".ogg", ".webm", ".3gp", ".mp4"}
+_MAX_VOICE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 @router.post("/me/voice-note", response_model=UserRead)
@@ -160,7 +178,10 @@ def upload_voice_note(
     storage: MediaStorage = Depends(get_media_storage),
 ) -> User:
     content_type = (file.content_type or "").lower().split(";")[0].strip()
-    if content_type not in _ALLOWED_VOICE_MIMES:
+    filename = (file.filename or "voice_note.m4a").lower()
+    ext = "." + filename.split(".")[-1] if "." in filename else ".m4a"
+
+    if content_type not in _ALLOWED_VOICE_MIMES and ext not in _ALLOWED_VOICE_EXTS:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Unsupported audio format",
@@ -169,7 +190,7 @@ def upload_voice_note(
     if len(data) > _MAX_VOICE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Voice note too large (max 5 MB)",
+            detail="Voice note too large (max 10 MB)",
         )
     url = storage.upload(io.BytesIO(data), file.filename or "voice_note.m4a")
     current_user.voice_note_url = url
@@ -179,6 +200,7 @@ def upload_voice_note(
 
 
 @router.get("/me/photos", response_model=list[UserPhotoRead])
+@router.get("/me/photos/", response_model=list[UserPhotoRead])
 def list_my_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -243,7 +265,7 @@ def get_ai_match_llm(
     return generate_llm_kanka_synergy(current_user, target_user)
 
 
-_AI_RECOMMENDATION_CANDIDATE_POOL = 200
+_AI_RECOMMENDATION_CANDIDATE_POOL = 30
 
 
 @router.get("/me/ai-recommendations", response_model=list[AIRecommendation])
@@ -421,19 +443,28 @@ async def purchase_callback(
             conv_id = checkout_form.get("conversationId")
             if conv_id and conv_id.startswith("purchase_"):
                 remainder = conv_id[len("purchase_"):]
-                item_type, quantity, user_id, _timestamp = remainder.rsplit("_", 3)
-                
+                try:
+                    item_type, quantity_str, user_id_str, _timestamp = remainder.rsplit("_", 3)
+                    quantity = int(quantity_str)
+                    user_id = int(user_id_str)
+                except (ValueError, AttributeError):
+                    logger.error("Invalid conversationId format in purchase callback: %s", conv_id)
+                    return responses.HTMLResponse(
+                        content="<html><body><h1>Geçersiz İşlem</h1></body></html>",
+                        status_code=400,
+                    )
+
                 unit_price = PURCHASE_ITEM_PRICES_TRY.get(item_type)
-                expected_price = float(unit_price) * int(quantity) if unit_price else None
+                expected_price = float(unit_price) * quantity if unit_price else None
                 paid_price = str(checkout_form.get("paidPrice") or checkout_form.get("price") or "")
                 if expected_price and paid_price and float(paid_price) < expected_price - _PRICE_TOLERANCE:
-                    logger.warning(f"Price mismatch in store purchase callback: expected {expected_price}, got {paid_price}")
+                    logger.warning("Price mismatch in store purchase callback: expected %s, got %s", expected_price, paid_price)
                     return responses.HTMLResponse(content="<html><body><h1>Ödeme Tutarı Geçersiz</h1></body></html>", status_code=400)
 
-                if claim_payment_callback(db, token, "purchase", int(user_id)):
-                    user = db.get(User, int(user_id))
+                if claim_payment_callback(db, token, "purchase", user_id):
+                    user = db.get(User, user_id)
                     if user is not None:
-                        apply_purchase(user, item_type, int(quantity))
+                        apply_purchase(user, item_type, quantity)
                         db.commit()
                 return responses.HTMLResponse(content=f"""
                     <html>
@@ -481,4 +512,16 @@ async def purchase_callback(
                 </body>
             </html>
         """)
+
+
+@router.get("/{user_id}", response_model=UserRead)
+def get_user_by_id(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return user
 

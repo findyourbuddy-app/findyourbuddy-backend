@@ -7,6 +7,7 @@ from app.core.datetime_utils import utcnow
 import iyzipay
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, responses, status
 from pydantic import BaseModel
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -15,9 +16,11 @@ from app.core.rate_limit import event_writes_rate_limit, limiter
 from app.database import get_db
 from app.models.event import Event
 from app.models.event_attendance import EventAttendance
+from app.models.event_rating import EventRating
+from app.models.match import Match
 from app.models.notification import Notification
 from app.models.user import User
-from app.schemas.event import EventCheckIn, EventCreate, EventCreationQuota, EventPublicSummary, EventRead
+from app.schemas.event import EventCheckIn, EventCreate, EventCreationQuota, EventPublicSummary, EventRatingCreate, EventRead
 from app.schemas.user import UserRead, UserPublic
 from app.services.event_service import (
     EventCheckInOutsideWindowError,
@@ -31,6 +34,7 @@ from app.services.event_service import (
     get_event,
     grant_event_credits,
     is_attending,
+    is_pending,
     is_checked_in,
     is_ticket_verified,
     join_event,
@@ -85,13 +89,17 @@ def list_all_events(
         else {}
     )
 
-    return [
+    res = [
         EventRead.model_validate(event).model_copy(
             update={
                 "attendee_count": attendee_counts.get(event.id, 0),
                 "is_attending": (
                     user_attendances.get(event.id) is not None
                     and user_attendances[event.id].status == "approved"
+                ),
+                "is_pending": (
+                    user_attendances.get(event.id) is not None
+                    and user_attendances[event.id].status == "pending"
                 ),
                 "is_checked_in": (
                     user_attendances.get(event.id) is not None
@@ -106,6 +114,9 @@ def list_all_events(
         )
         for event in events
     ]
+
+    res.sort(key=lambda e: not (e.is_attending or e.is_pending or e.creator_id == current_user.id))
+    return res
 
 
 @router.get("/me/attending", response_model=list[EventRead])
@@ -148,6 +159,35 @@ def read_my_attending_events(
                     and user_attendances[event.id].ticket_verified_at is not None
                 ),
                 "creator": UserPublic.model_validate(creators[event.creator_id]) if event.creator_id in creators else None,
+            }
+        )
+        for event in events
+    ]
+
+
+@router.get("/me/created", response_model=list[EventRead])
+def read_my_created_events(
+    upcoming_only: bool = True,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[EventRead]:
+    query = db.query(Event).filter(Event.creator_id == current_user.id)
+    if upcoming_only:
+        six_hours_ago = utcnow() - timedelta(hours=6)
+        query = query.filter(Event.starts_at >= six_hours_ago)
+    events = query.order_by(Event.starts_at.desc()).all()
+    if not events:
+        return []
+
+    event_ids = [e.id for e in events]
+    attendee_counts = count_attendees_bulk(db, event_ids)
+
+    return [
+        EventRead.model_validate(event).model_copy(
+            update={
+                "attendee_count": attendee_counts.get(event.id, 0),
+                "is_attending": True,
+                "creator": UserPublic.model_validate(current_user),
             }
         )
         for event in events
@@ -289,7 +329,15 @@ async def event_credits_callback(
 
             conv_id = checkout_form.get("conversationId")
             if conv_id and conv_id.startswith("credits_"):
-                user_id = int(conv_id.split("_")[1])
+                parts = conv_id.split("_")
+                try:
+                    user_id = int(parts[1])
+                except (IndexError, ValueError):
+                    logger.error("Invalid conversationId format in credits callback: %s", conv_id)
+                    return responses.HTMLResponse(
+                        content="<html><body><h1>Geçersiz İşlem</h1></body></html>",
+                        status_code=400,
+                    )
                 if claim_payment_callback(db, token, "event_credits", user_id):
                     grant_event_credits(db, user_id, EVENT_CREDITS_PER_PURCHASE)
                 return responses.HTMLResponse(content=f"""
@@ -350,12 +398,19 @@ def read_event(
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     creator = db.get(User, event.creator_id) if event.creator_id else None
+    user_has_rated = db.query(EventRating).filter(
+        EventRating.event_id == event_id,
+        EventRating.user_id == current_user.id
+    ).first() is not None
+
     return EventRead.model_validate(event).model_copy(
         update={
             "attendee_count": count_attendees(db, event_id),
             "is_attending": is_attending(db, event_id, current_user.id),
+            "is_pending": is_pending(db, event_id, current_user.id),
             "is_checked_in": is_checked_in(db, event_id, current_user.id),
             "is_ticket_verified": is_ticket_verified(db, event_id, current_user.id),
+            "has_rated": user_has_rated,
             "creator": UserPublic.model_validate(creator) if creator else None,
         }
     )
@@ -405,11 +460,14 @@ def attend_event(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     attendance = join_event(db, event_id, current_user.id)
     
-    if event.is_group_event and event.creator_id:
+    if event.creator_id and event.creator_id != current_user.id:
         db.add(Notification(
             user_id=event.creator_id,
             title="Yeni Katılım İsteği!",
-            body=f"{current_user.display_name}, '{event.title}' etkinliğine katılmak istiyor."
+            body=f"{current_user.display_name}, '{event.title}' etkinliğine katılmak istiyor.",
+            event_id=event.id,
+            notification_type="event_request",
+            data={"event_id": event.id},
         ))
         db.commit()
 
@@ -417,6 +475,7 @@ def attend_event(
         update={
             "attendee_count": count_attendees(db, event_id),
             "is_attending": attendance.status == "approved",
+            "is_pending": attendance.status == "pending",
             "is_checked_in": attendance.checked_in_at is not None,
             "is_ticket_verified": attendance.ticket_verified_at is not None,
         }
@@ -452,6 +511,25 @@ def check_in(
             "is_checked_in": True,
         }
     )
+
+
+@router.get("/{event_id}/attendees", response_model=list[UserPublic])
+def get_event_attendees(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[User]:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    
+    attendees = (
+        db.query(User)
+        .join(EventAttendance, EventAttendance.user_id == User.id)
+        .filter(EventAttendance.event_id == event_id, EventAttendance.status == "approved")
+        .all()
+    )
+    return attendees
 
 
 @router.get("/{event_id}/join-requests", response_model=list[UserRead])
@@ -497,13 +575,32 @@ def handle_join_request(
     if attendance is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attendance request not found")
 
-    attendance.status = "approved" if data.approved else "rejected"
+    if data.approved:
+        attendance.status = "approved"
+        existing_match = db.query(Match).filter(
+            Match.event_id == event_id,
+            or_(
+                and_(Match.user_a_id == current_user.id, Match.user_b_id == user_id),
+                and_(Match.user_a_id == user_id, Match.user_b_id == current_user.id),
+            )
+        ).first()
+        if not existing_match:
+            db.add(Match(
+                event_id=event_id,
+                user_a_id=current_user.id,
+                user_b_id=user_id,
+                score=1.0,
+                is_active=True,
+            ))
+    else:
+        attendance.status = "rejected"
 
-    status_label = "onaylandı 🎉" if data.approved else "reddedildi"
+    status_label = "onaylandı" if data.approved else "reddedildi"
     db.add(Notification(
         user_id=user_id,
         title="Grup Katılım Sonucu",
-        body=f"'{event.title}' grubuna katılım isteğin {status_label}."
+        body=f"'{event.title}' grubuna katılım isteğin {status_label}.",
+        event_id=event.id,
     ))
     db.commit()
 
@@ -511,6 +608,60 @@ def handle_join_request(
         update={
             "attendee_count": count_attendees(db, event_id),
             "is_attending": is_attending(db, event_id, current_user.id),
+            "is_pending": is_pending(db, event_id, current_user.id),
+        }
+    )
+
+
+@router.post("/{event_id}/join-requests/approve-all", response_model=EventRead)
+def approve_all_join_requests(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventRead:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if event.creator_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only creator can manage join requests")
+
+    pending_attendances = (
+        db.query(EventAttendance)
+        .filter(EventAttendance.event_id == event_id, EventAttendance.status == "pending")
+        .all()
+    )
+
+    for attendance in pending_attendances:
+        attendance.status = "approved"
+        existing_match = db.query(Match).filter(
+            Match.event_id == event_id,
+            or_(
+                and_(Match.user_a_id == current_user.id, Match.user_b_id == attendance.user_id),
+                and_(Match.user_a_id == attendance.user_id, Match.user_b_id == current_user.id),
+            )
+        ).first()
+        if not existing_match:
+            db.add(Match(
+                event_id=event_id,
+                user_a_id=current_user.id,
+                user_b_id=attendance.user_id,
+                score=1.0,
+                is_active=True,
+            ))
+        db.add(Notification(
+            user_id=attendance.user_id,
+            title="Grup Katılım Sonucu",
+            body=f"'{event.title}' grubuna katılım isteğin onaylandı.",
+            event_id=event.id,
+        ))
+
+    db.commit()
+
+    return EventRead.model_validate(event).model_copy(
+        update={
+            "attendee_count": count_attendees(db, event_id),
+            "is_attending": is_attending(db, event_id, current_user.id),
+            "is_pending": is_pending(db, event_id, current_user.id),
         }
     )
 
@@ -552,3 +703,65 @@ def record_bulk_event_impressions(
 ) -> None:
     """Records impressions in bulk when a list of event cards is rendered."""
     return None
+
+
+@router.post("/{event_id}/rate")
+def rate_event(
+    event_id: int,
+    payload: EventRatingCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if payload.rating < 1 or payload.rating > 5:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rating must be between 1 and 5 stars")
+
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+
+    if event.creator_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot rate your own event")
+
+    attendance = (
+        db.query(EventAttendance)
+        .filter(EventAttendance.event_id == event_id, EventAttendance.user_id == current_user.id, EventAttendance.status == "approved")
+        .first()
+    )
+    if attendance is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You must have attended this event to rate it")
+
+    existing = db.query(EventRating).filter(
+        EventRating.event_id == event_id,
+        EventRating.user_id == current_user.id
+    ).first()
+
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You have already rated this event")
+
+    rating_record = EventRating(
+        event_id=event_id,
+        user_id=current_user.id,
+        rating=payload.rating,
+        comment=payload.comment,
+    )
+    db.add(rating_record)
+
+    # Impact Host / Creator Trust Score if event was created by a user
+    creator_trust_score = None
+    if event.creator_id:
+        creator = db.get(User, event.creator_id)
+        if creator:
+            if payload.rating >= 4:
+                boost = 3 if payload.rating == 5 else 2
+                creator.trust_score += boost
+            elif payload.rating <= 2:
+                penalty = 4 if payload.rating == 1 else 2
+                creator.trust_score -= penalty
+            creator_trust_score = creator.trust_score
+
+    db.commit()
+    return {
+        "status": "ok",
+        "message": "Event and host rated successfully",
+        "creator_trust_score": creator_trust_score
+    }

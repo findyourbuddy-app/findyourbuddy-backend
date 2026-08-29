@@ -124,38 +124,44 @@ def list_swipe_candidates(
     min_age: int | None = None,
     max_age: int | None = None,
     max_distance_km: float | None = None,
+    gender_preference: str | None = None,
+    university: str | None = None,
+    zodiac_sign: str | None = None,
+    is_verified_only: bool | None = None,
+    has_voice_note: bool | None = None,
+    min_trust_score: int | None = None,
 ) -> list[User]:
     swiper = db.get(User, swiper_id)
     if swiper is None:
         return []
 
-    # Try to load candidate IDs from Redis cache first
-    # We only cache the default view (when filters min_age/max_age/max_distance_km are empty)
-    # to avoid caching multiple filter permutations.
-    is_default_query = min_age is None and max_age is None and max_distance_km is None
+    is_default_query = (
+        min_age is None
+        and max_age is None
+        and max_distance_km is None
+        and gender_preference is None
+        and university is None
+        and zodiac_sign is None
+        and not is_verified_only
+        and not has_voice_note
+        and min_trust_score is None
+    )
     
     if is_default_query:
         cached_ids = CacheService.get_cached_candidates(swiper_id, event_id)
         if cached_ids is not None:
-            # Fetch users in bulk
             users = db.query(User).filter(User.id.in_(cached_ids)).all()
             user_map = {user.id: user for user in users}
-            # Return users in the exact order stored in Redis cache
             return [user_map[uid] for uid in cached_ids if uid in user_map]
 
     if not is_premium(db, swiper_id):
-        min_age = max_age = max_distance_km = None
+        min_age = max_age = max_distance_km = gender_preference = university = zodiac_sign = min_trust_score = None
+        is_verified_only = has_voice_note = False
 
     event = db.get(Event, event_id)
     is_group_or_system = event is not None and (event.is_group_event or event.creator_id is None)
 
     if not is_group_or_system and max_distance_km is None:
-        # 1:1 user events skip the attendance filter below, so unlike group/system
-        # events (where attendees self-selected into that event's location), there
-        # is no other geographic scoping. Without this, RecommendationService's
-        # score has no distance component either, so free users would see a
-        # completely unbounded, non-local candidate pool. Premium users can still
-        # override this with their own max_distance_km.
         max_distance_km = get_settings().match_max_distance_km
 
     already_swiped_target_ids = db.query(Swipe.target_id).filter(
@@ -170,9 +176,8 @@ def list_swipe_candidates(
     )
 
     if is_group_or_system:
-        # Group & System Events: require event attendance
         attending_user_ids = db.query(EventAttendance.user_id).filter(
-            EventAttendance.event_id == event_id, EventAttendance.status == "approved"
+            EventAttendance.event_id == event_id, EventAttendance.status.in_(["approved", "pending"])
         )
         query = query.filter(User.id.in_(attending_user_ids))
 
@@ -180,6 +185,19 @@ def list_swipe_candidates(
         query = query.filter(User.age.is_not(None), User.age >= min_age)
     if max_age is not None:
         query = query.filter(User.age.is_not(None), User.age <= max_age)
+    if gender_preference and gender_preference.lower() in ("female", "male", "other"):
+        query = query.filter(User.gender == gender_preference)
+    if university:
+        query = query.filter(User.university.ilike(f"%{university.strip()}%"))
+    if zodiac_sign and zodiac_sign != "Tümü":
+        clean_zodiac = zodiac_sign.split()[0]
+        query = query.filter(User.zodiac_sign == clean_zodiac)
+    if is_verified_only:
+        query = query.filter(User.is_verified.is_(True))
+    if has_voice_note:
+        query = query.filter(User.voice_note_url.is_not(None))
+    if min_trust_score is not None and min_trust_score > 0:
+        query = query.filter(User.trust_score >= min_trust_score)
 
     candidates = query.all()
 
@@ -212,6 +230,32 @@ def list_swipe_candidates(
         CacheService.set_cached_candidates(swiper_id, event_id, [u.id for u in candidates])
 
     return candidates
+
+
+def get_upcoming_own_event_titles(db: Session, user_ids: list[int]) -> dict[int, str]:
+    """For each user, the title of the soonest upcoming non-group event they
+    created (if any) -- shown on their swipe card. 1:1 events don't scope
+    candidates by attendance to the active event (see is_group_or_system
+    above), so candidates aren't actually tied to it; surfacing what each
+    person themselves is hosting is the only per-candidate event context
+    that's meaningful here."""
+    if not user_ids:
+        return {}
+    events = (
+        db.query(Event)
+        .filter(
+            Event.creator_id.in_(user_ids),
+            Event.is_group_event.is_(False),
+            Event.starts_at >= utcnow(),
+        )
+        .order_by(Event.starts_at)
+        .all()
+    )
+    titles: dict[int, str] = {}
+    for event in events:
+        if event.creator_id not in titles:
+            titles[event.creator_id] = event.title
+    return titles
 
 
 def list_incoming_likes(

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -24,7 +24,7 @@ def _create_event(client: TestClient, headers: dict[str, str]) -> int:
             "location_name": "Central Park",
             "latitude": 40.0,
             "longitude": -73.0,
-            "starts_at": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+            "starts_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
         },
     )
     return response.json()["id"]

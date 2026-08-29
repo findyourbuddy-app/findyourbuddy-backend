@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -37,7 +37,7 @@ def test_grant_premium_activates_subscription(db_session: Session) -> None:
 def test_grant_premium_respects_expiry(db_session: Session) -> None:
     user_id = _register(db_session)
 
-    grant_premium(db_session, user_id, expires_at=datetime.utcnow() - timedelta(days=1))
+    grant_premium(db_session, user_id, expires_at=datetime.now(timezone.utc) - timedelta(days=1))
 
     assert is_premium(db_session, user_id) is False
 
@@ -71,8 +71,8 @@ def test_revoke_premium_on_user_without_subscription_is_a_noop(db_session: Sessi
 def test_grant_premium_twice_updates_same_row(db_session: Session) -> None:
     user_id = _register(db_session)
 
-    grant_premium(db_session, user_id, expires_at=datetime.utcnow() + timedelta(days=1))
-    grant_premium(db_session, user_id, expires_at=datetime.utcnow() + timedelta(days=30))
+    grant_premium(db_session, user_id, expires_at=datetime.now(timezone.utc) + timedelta(days=1))
+    grant_premium(db_session, user_id, expires_at=datetime.now(timezone.utc) + timedelta(days=30))
 
     subscription = get_subscription(db_session, user_id)
     assert subscription is not None

@@ -10,6 +10,7 @@ from app.models.bookmark import Bookmark
 from app.models.event import Event
 from app.models.event_attendance import EventAttendance
 from app.models.match import Match
+from app.models.notification import Notification
 from app.models.swipe import Swipe
 from app.models.user import User
 from app.schemas.event import EventCreate
@@ -84,7 +85,8 @@ def list_events(
     if category is not None:
         query = query.filter(Event.category == category)
     if upcoming_only:
-        query = query.filter(Event.starts_at >= utcnow())
+        cutoff = utcnow() - timedelta(minutes=30)
+        query = query.filter(Event.starts_at >= cutoff)
     # Filtering "user" origin client-side over a date-sorted page would only
     # ever see user events once enough system events (there can be
     # thousands) have scrolled past chronologically -- do it in the query.
@@ -202,7 +204,8 @@ def list_attending_events(db: Session, user_id: int, upcoming_only: bool = True)
         .filter(EventAttendance.user_id == user_id, EventAttendance.status == "approved")
     )
     if upcoming_only:
-        query = query.filter(Event.starts_at >= utcnow())
+        six_hours_ago = utcnow() - timedelta(hours=6)
+        query = query.filter(Event.starts_at >= six_hours_ago)
     return query.order_by(Event.starts_at).all()
 
 
@@ -212,6 +215,16 @@ def is_attending(db: Session, event_id: int, user_id: int) -> bool:
             EventAttendance.event_id == event_id,
             EventAttendance.user_id == user_id,
             EventAttendance.status == "approved",
+        )
+    ).scalar()
+
+
+def is_pending(db: Session, event_id: int, user_id: int) -> bool:
+    return db.query(
+        exists().where(
+            EventAttendance.event_id == event_id,
+            EventAttendance.user_id == user_id,
+            EventAttendance.status == "pending",
         )
     ).scalar()
 
@@ -242,7 +255,7 @@ def count_attendees_bulk(db: Session, event_ids: list[int]) -> dict[int, int]:
     return {event_id: count for event_id, count in rows}
 
 
-def delete_expired_events(db: Session, retention_days: int) -> int:
+def delete_expired_events(db: Session, retention_days: float) -> int:
     """Permanently deletes events whose starts_at is older than the retention
     window, along with their swipes/bookmarks. Events that produced at least
     one Match are left untouched so existing conversations are never lost."""
@@ -264,6 +277,9 @@ def delete_expired_events(db: Session, retention_days: int) -> int:
     db.query(Swipe).filter(Swipe.event_id.in_(expired_ids)).delete(synchronize_session=False)
     db.query(Bookmark).filter(Bookmark.event_id.in_(expired_ids)).delete(synchronize_session=False)
     db.query(EventAttendance).filter(EventAttendance.event_id.in_(expired_ids)).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.event_id.in_(expired_ids)).update(
+        {Notification.event_id: None}, synchronize_session=False
+    )
     for event in expired_events:
         db.delete(event)
 

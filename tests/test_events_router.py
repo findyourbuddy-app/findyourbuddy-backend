@@ -1,6 +1,9 @@
-from datetime import datetime, timedelta
-
+from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+from app.models.event import Event
+from app.models.event_attendance import EventAttendance
+from app.models.user import User
 
 
 def _event_payload(**overrides: object) -> dict[str, object]:
@@ -10,7 +13,7 @@ def _event_payload(**overrides: object) -> dict[str, object]:
         "location_name": "Central Park",
         "latitude": 40.0,
         "longitude": -73.0,
-        "starts_at": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+        "starts_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
     }
     payload.update(overrides)
     return payload
@@ -128,7 +131,7 @@ def test_check_in_confirms_attendance_when_nearby(
         json=_event_payload(
             latitude=41.0,
             longitude=29.0,
-            starts_at=(datetime.utcnow() + timedelta(minutes=5)).isoformat(),
+            starts_at=(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
         ),
     )
     event_id = create_response.json()["id"]
@@ -152,7 +155,7 @@ def test_check_in_rejects_when_too_far(
         json=_event_payload(
             latitude=41.0,
             longitude=29.0,
-            starts_at=(datetime.utcnow() + timedelta(minutes=5)).isoformat(),
+            starts_at=(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
         ),
     )
     event_id = create_response.json()["id"]
@@ -222,4 +225,50 @@ def test_create_event_sanitizes_xss_description(
     assert "<script>" not in cleaned_desc
     assert "</script>" not in cleaned_desc
     assert "alert(1)" in cleaned_desc
+
+
+def test_rate_event_and_impact_trust_score(
+    client: TestClient, auth_headers: dict[str, str], db_session: Session
+) -> None:
+    creator = User(
+        email="eventcreator@example.com",
+        hashed_password="hash",
+        display_name="Creator User",
+        referral_code="CREATOR123",
+        phone_number="+905550000000",
+        trust_score=50,
+    )
+    db_session.add(creator)
+    db_session.commit()
+    db_session.refresh(creator)
+
+    rater = db_session.query(User).filter(User.email != "eventcreator@example.com").first()
+    event = Event(
+        title="Test Creator Event",
+        category="coffee",
+        location_name="Istanbul",
+        latitude=41.0,
+        longitude=28.9,
+        starts_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        creator_id=creator.id,
+    )
+    db_session.add(event)
+    db_session.commit()
+    db_session.refresh(event)
+
+    attendance = EventAttendance(event_id=event.id, user_id=rater.id, status="approved")
+    db_session.add(attendance)
+    db_session.commit()
+
+    response = client.post(
+        f"/events/{event.id}/rate",
+        headers=auth_headers,
+        json={"rating": 5, "comment": "Awesome event!"},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+    db_session.refresh(creator)
+    assert creator.trust_score == 53
+
 

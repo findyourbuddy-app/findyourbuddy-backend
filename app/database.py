@@ -7,14 +7,14 @@ from app.config import get_settings
 
 settings = get_settings()
 
+engine_kwargs = {"pool_pre_ping": True}
+if "sqlite" not in settings.database_url.lower():
+    engine_kwargs["pool_size"] = 10
+    engine_kwargs["max_overflow"] = 20
+
 engine = create_engine(
     settings.database_url,
-    # Supabase's pooler silently drops idle connections; without this,
-    # SQLAlchemy hands out a dead connection and every request fails with
-    # "SSL SYSCALL error: EOF detected" until the pool happens to cycle it
-    # out. pre_ping tests the connection before use and transparently
-    # reconnects instead.
-    pool_pre_ping=True,
+    **engine_kwargs
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

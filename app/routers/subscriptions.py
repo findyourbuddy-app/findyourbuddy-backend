@@ -150,7 +150,14 @@ async def iyzico_callback(
             conv_id = checkout_form.get("conversationId")
             if conv_id and conv_id.startswith("sub_"):
                 parts = conv_id.split("_")
-                user_id = int(parts[1])
+                try:
+                    user_id = int(parts[1])
+                except (IndexError, ValueError):
+                    logger.error("Invalid conversationId format in callback: %s", conv_id)
+                    return responses.HTMLResponse(
+                        content="<html><body><h1>Geçersiz İşlem</h1></body></html>",
+                        status_code=400,
+                    )
                 if claim_payment_callback(db, token, "subscription", user_id):
                     expires = utcnow() + timedelta(days=30)
                     grant_premium(db, user_id, expires_at=expires)

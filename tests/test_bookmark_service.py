@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy.orm import Session
@@ -35,7 +35,7 @@ def _create_event(db_session: Session, creator_id: int) -> int:
             location_name="Central Park",
             latitude=40.0,
             longitude=-73.0,
-            starts_at=datetime.utcnow() + timedelta(days=1),
+            starts_at=datetime.now(timezone.utc) + timedelta(days=1),
         ),
         creator_id,
         is_premium=True,
@@ -118,7 +118,7 @@ def test_delete_past_event_bookmarks_removes_only_past(db_session: Session) -> N
     upcoming_event_id = _create_event(db_session, user_id)
     past_event_id = _create_event(db_session, user_id)
     db_session.query(Event).filter(Event.id == past_event_id).update(
-        {"starts_at": datetime.utcnow() - timedelta(days=1)}
+        {"starts_at": datetime.now(timezone.utc) - timedelta(days=1)}
     )
     db_session.commit()
     create_bookmark(db_session, user_id, upcoming_event_id)

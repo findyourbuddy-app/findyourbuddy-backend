@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -50,7 +52,8 @@ def get_current_premium_user(
 
 
 def require_scraper_api_key(x_scraper_api_key: str | None = Header(default=None)) -> None:
-    if x_scraper_api_key is None or x_scraper_api_key != get_settings().scraper_api_key:
+    expected = get_settings().scraper_api_key
+    if x_scraper_api_key is None or not secrets.compare_digest(x_scraper_api_key, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid scraper API key"
         )

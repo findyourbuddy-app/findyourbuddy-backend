@@ -110,6 +110,7 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_from_email: str = ""
+    admin_alert_email: str = ""
 
     push_provider: str = "logging"
     expo_push_api_url: str = "https://exp.host/--/api/v2/push/send"
@@ -120,7 +121,7 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     environment: str = "development"
 
-    event_retention_days: int = 0
+    event_retention_days: float = 0.25
     scheduler_interval_hours: float = 6.0
 
     # Accounts are suspended (is_active=False) once trust_score has stayed

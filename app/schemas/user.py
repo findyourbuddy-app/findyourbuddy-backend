@@ -12,7 +12,7 @@ class UserPublic(BaseModel):
     id: int
     display_name: str
     photo_url: str | None = None
-    trust_score: int = 0
+    trust_score: int = 50
     university: str | None = None
     is_verified: bool = False
 
@@ -62,6 +62,7 @@ class UserRead(BaseModel):
     date_of_birth: date | None = None
     occupation: str | None = None
     university: str | None = None
+    class_year: str | None = None
     zodiac_sign: str | None = None
     gender: str | None = None
     height: int | None = None
@@ -82,7 +83,7 @@ class UserRead(BaseModel):
     accepted_terms_at: datetime | None = None
     created_at: datetime
     photos: list[UserPhotoRead] = []
-    trust_score: int = 0
+    trust_score: int = 50
     referral_code: str
     bonus_swipe_credits: int = 0
     boosted_until: datetime | None = None
@@ -92,6 +93,7 @@ class UserRead(BaseModel):
     phone_number: str | None = None
     phone_verified: bool = False
     is_verified: bool = False
+    event_title: str | None = None
 
 
 class UserUpdate(BaseModel):
@@ -99,6 +101,7 @@ class UserUpdate(BaseModel):
     date_of_birth: date | None = None
     occupation: str | None = None
     university: str | None = None
+    class_year: str | None = None
     zodiac_sign: str | None = None
     gender: str | None = None
     height: int | None = None

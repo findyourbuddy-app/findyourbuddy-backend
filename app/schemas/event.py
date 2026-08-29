@@ -16,8 +16,9 @@ class EventCreate(BaseModel):
     max_attendees: int | None = None
     is_paid: bool = False
     ticket_price: float | None = None
+    image_url: str | None = None
 
-    @field_validator("title", "description", "location_name", "category")
+    @field_validator("title", "description", "location_name", "category", "image_url")
     @classmethod
     def _sanitize_event_strings(cls, v: str | None) -> str | None:
         if v is None:
@@ -54,7 +55,9 @@ class EventRead(BaseModel):
     created_at: datetime
     attendee_count: int = 0
     is_attending: bool = False
+    is_pending: bool = False
     is_checked_in: bool = False
+    has_rated: bool = False
 
 
 class EventPublicSummary(BaseModel):
@@ -82,3 +85,20 @@ class EventCreationQuota(BaseModel):
     events_created_this_week: int
     weekly_limit: int | None
     credits_balance: int
+
+
+class EventRatingCreate(BaseModel):
+    rating: int
+    comment: str | None = None
+
+
+class EventRatingRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_id: int
+    user_id: int
+    rating: int
+    comment: str | None
+    created_at: datetime
+

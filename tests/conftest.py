@@ -13,6 +13,7 @@ from app.main import app
 import app.core.email as email_module
 import app.core.password_reset as password_reset_module
 import app.services.llm_moderation_service as llm_moderation_module
+from app.services.cache_service import CacheService
 
 
 class FakeNotificationSender:
@@ -74,6 +75,18 @@ def _no_real_llm_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     no API key is configured."""
     monkeypatch.setattr(llm_moderation_module, "evaluate_event_with_llm", lambda event: (True, None))
     monkeypatch.setattr(llm_moderation_module, "classify_user_event_category_with_llm", lambda title, description=None: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Swipe candidate caching goes through Redis when REDIS_URL is set in
+    .env (real local/prod usage) -- but db_session gives every test a fresh
+    in-memory SQLite DB while Redis stays live and shared across the whole
+    run, so two tests reusing the same swiper_id/event_id (autoincrement IDs
+    restart at 1 per test) would silently serve each other's stale cached
+    candidate list. Disabling the client keeps tests deterministic
+    regardless of whether the machine running them has Redis configured."""
+    monkeypatch.setattr(CacheService, "_get_client", classmethod(lambda cls: None))
 
 
 @pytest.fixture()

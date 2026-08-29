@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -22,39 +22,34 @@ _LIKE_DIRECTIONS = (SwipeDirection.LIKE, SwipeDirection.SUPER_LIKE)
 
 
 def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> bool:
-    count = (
-        db.query(Swipe)
-        .filter(
-            or_(
-                and_(
-                    Swipe.swiper_id == user_a_id,
-                    Swipe.target_id == user_b_id,
-                    Swipe.event_id == event_id,
-                    Swipe.direction.in_(_LIKE_DIRECTIONS),
-                ),
-                and_(
-                    Swipe.swiper_id == user_b_id,
-                    Swipe.target_id == user_a_id,
-                    Swipe.event_id == event_id,
-                    Swipe.direction.in_(_LIKE_DIRECTIONS),
-                ),
-            )
+    a_liked_b = db.query(
+        exists().where(
+            Swipe.swiper_id == user_a_id,
+            Swipe.target_id == user_b_id,
+            Swipe.event_id == event_id,
+            Swipe.direction.in_(_LIKE_DIRECTIONS),
         )
-        .count()
-    )
-    return count == 2
+    ).scalar()
+    if not a_liked_b:
+        return False
+    return db.query(
+        exists().where(
+            Swipe.swiper_id == user_b_id,
+            Swipe.target_id == user_a_id,
+            Swipe.event_id == event_id,
+            Swipe.direction.in_(_LIKE_DIRECTIONS),
+        )
+    ).scalar()
 
 
-def _existing_match(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> Match | None:
-    return (
-        db.query(Match)
-        .filter(
+def _existing_match(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> bool:
+    return db.query(
+        exists().where(
             Match.event_id == event_id,
             Match.user_a_id == user_a_id,
             Match.user_b_id == user_b_id,
         )
-        .first()
-    )
+    ).scalar()
 
 
 def _interest_score(user_a: User, user_b: User) -> float:
@@ -104,6 +99,53 @@ def _zodiac_score(user_a: User, user_b: User) -> float:
     return _ELEMENT_SYNERGY.get((elem1, elem2), 0.5)
 
 
+def _language_score(user_a: User, user_b: User) -> float:
+    langs_a = user_a.languages_spoken or []
+    langs_b = user_b.languages_spoken or []
+    if not langs_a or not langs_b:
+        return 0.0
+    shared = set(langs_a) & set(langs_b)
+    union = set(langs_a) | set(langs_b)
+    return len(shared) / len(union) if union else 0.0
+
+
+def _looking_for_score(user_a: User, user_b: User) -> float:
+    lf_a = (user_a.looking_for or "").strip().lower()
+    lf_b = (user_b.looking_for or "").strip().lower()
+    if not lf_a or not lf_b:
+        return 0.0
+    if lf_a == lf_b:
+        return 1.0
+    words_a = set(lf_a.split())
+    words_b = set(lf_b.split())
+    overlap = words_a & words_b
+    return len(overlap) / max(len(words_a), len(words_b)) if overlap else 0.3
+
+
+def _academic_score(user_a: User, user_b: User) -> float:
+    score = 0.0
+    u1 = (user_a.university or "").strip().lower()
+    u2 = (user_b.university or "").strip().lower()
+    if u1 and u2 and u1 == u2:
+        score += 0.7
+    c1 = (user_a.class_year or "").strip().lower()
+    c2 = (user_b.class_year or "").strip().lower()
+    if c1 and c2 and c1 == c2:
+        score += 0.3
+    return min(1.0, score)
+
+
+def _worldview_score(user_a: User, user_b: User) -> float:
+    score = 0.0
+    p1, p2 = user_a.political_views, user_b.political_views
+    if p1 and p2 and p1 == p2:
+        score += 0.5
+    b1, b2 = user_a.beliefs, user_b.beliefs
+    if b1 and b2 and b1 == b2:
+        score += 0.5
+    return min(1.0, score)
+
+
 def _distance_score(user_a: User, user_b: User) -> float:
     has_coordinates = None not in (
         user_a.latitude,
@@ -121,12 +163,23 @@ def _distance_score(user_a: User, user_b: User) -> float:
     return max(0.0, 1 - distance_km / max_distance_km)
 
 
+_FIXED_WEIGHTS_SUM = 0.15 + 0.15 + 0.20 + 0.15 + 0.10  # zodiac + lang + looking + academic + worldview
+
+
 def _calculate_score(user_a: User, user_b: User) -> float:
     settings = get_settings()
     interest_part = settings.match_common_interest_weight * _interest_score(user_a, user_b)
     distance_part = settings.match_distance_weight * _distance_score(user_a, user_b)
-    zodiac_part = 0.2 * _zodiac_score(user_a, user_b)
-    return interest_part + distance_part + zodiac_part
+    zodiac_part = 0.15 * _zodiac_score(user_a, user_b)
+    lang_part = 0.15 * _language_score(user_a, user_b)
+    looking_part = 0.20 * _looking_for_score(user_a, user_b)
+    academic_part = 0.15 * _academic_score(user_a, user_b)
+    worldview_part = 0.10 * _worldview_score(user_a, user_b)
+    trust_boost = min(1.2, max(0.8, (user_b.trust_score or 50) / 50.0))
+
+    total_weight = settings.match_common_interest_weight + settings.match_distance_weight + _FIXED_WEIGHTS_SUM
+    raw_total = interest_part + distance_part + zodiac_part + lang_part + looking_part + academic_part + worldview_part
+    return round((raw_total / total_weight) * trust_boost, 3)
 
 
 def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int) -> Match | None:
@@ -134,7 +187,7 @@ def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int)
         return None
 
     user_a_id, user_b_id = _ordered_pair(swiper_id, target_id)
-    if _existing_match(db, user_a_id, user_b_id, event_id) is not None:
+    if _existing_match(db, user_a_id, user_b_id, event_id):
         return None
 
     user_a = db.get(User, user_a_id)
@@ -177,18 +230,23 @@ def unmatch(db: Session, match_id: int, user_id: int) -> None:
 def list_matches_for_user(
     db: Session, user_id: int, skip: int = 0, limit: int = 50
 ) -> list[Match]:
-    blocked_ids = set(blocked_user_ids(db, user_id))
-    matches = (
+    excluded_ids = set(blocked_user_ids(db, user_id))
+    query = (
         db.query(Match)
         .filter(
             or_(Match.user_a_id == user_id, Match.user_b_id == user_id),
             Match.is_active.is_(True),
         )
         .order_by(Match.created_at.desc())
-        .all()
     )
-    visible = [match for match in matches if _other_user_id(match, user_id) not in blocked_ids]
-    return visible[skip : skip + limit]
+    if excluded_ids:
+        query = query.filter(
+            or_(
+                and_(Match.user_a_id == user_id, Match.user_b_id.notin_(excluded_ids)),
+                and_(Match.user_b_id == user_id, Match.user_a_id.notin_(excluded_ids)),
+            )
+        )
+    return query.offset(skip).limit(limit).all()
 
 
 def list_matches_with_details(

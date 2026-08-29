@@ -4,6 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import BinaryIO, Protocol
 
+import boto3
 from app.config import get_settings
 
 
@@ -24,10 +25,25 @@ class LocalMediaStorage:
         self._base_dir.mkdir(parents=True, exist_ok=True)
 
     def upload(self, file: BinaryIO, filename: str) -> str:
-        stored_name = f"{uuid.uuid4().hex}{Path(filename).suffix}"
+        header = file.read(16)
+        file.seek(0)
+
+        ext = ".jpg"
+        if header.startswith(b"\x89PNG"):
+            ext = ".png"
+        elif header.startswith(b"RIFF") and b"WEBP" in header:
+            ext = ".webp"
+        elif header.startswith(b"\xff\xd8\xff"):
+            ext = ".jpg"
+        else:
+            raw_ext = Path(filename).suffix.split("?")[0].lower()
+            if raw_ext in (".png", ".jpeg", ".jpg", ".webp", ".gif", ".m4a", ".mp3"):
+                ext = raw_ext
+
+        stored_name = f"{uuid.uuid4().hex}{ext}"
         with (self._base_dir / stored_name).open("wb") as destination:
             destination.write(file.read())
-        return f"{self._base_url}/{stored_name}"
+        return f"/media/{stored_name}"
 
     def delete(self, url_or_path: str | None) -> None:
         if not url_or_path:
@@ -54,8 +70,6 @@ class S3MediaStorage:
         secret_access_key: str,
         public_url_base: str,
     ) -> None:
-        import boto3
-
         self._bucket_name = bucket_name
         self._public_url_base = public_url_base.rstrip("/")
         self._client = boto3.client(
@@ -67,8 +81,11 @@ class S3MediaStorage:
         )
 
     def upload(self, file: BinaryIO, filename: str) -> str:
-        stored_name = f"{uuid.uuid4().hex}{Path(filename).suffix}"
-        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        ext = Path(filename).suffix.split("?")[0].lower()
+        if not ext or ext in (".tmp", ".temp", ".bin"):
+            ext = ".jpg"
+        stored_name = f"{uuid.uuid4().hex}{ext}"
+        content_type = mimetypes.guess_type(stored_name)[0] or "image/jpeg"
         self._client.upload_fileobj(
             file,
             self._bucket_name,
@@ -100,4 +117,5 @@ def get_media_storage() -> MediaStorage:
             public_url_base=settings.s3_public_url_base,
         )
     public_media_url = f"{settings.public_base_url.rstrip('/')}{settings.media_base_url}"
-    return LocalMediaStorage(Path(settings.media_root), public_media_url)
+    media_dir = Path(settings.media_root).resolve()
+    return LocalMediaStorage(media_dir, public_media_url)

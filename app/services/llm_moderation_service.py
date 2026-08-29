@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def check_user_event_collisions(db: Session, creator_id: int, starts_at: datetime, location_name: str, current_event_id: int | None = None) -> str | None:
-    """Checks if the user has another duplicate event starting at the exact same time, location and title."""
+    """Checks if the user has another event at the same location within a ±15 minute window."""
     if not creator_id or not starts_at or not location_name:
         return None
     try:
@@ -38,12 +38,10 @@ def check_user_event_collisions(db: Session, creator_id: int, starts_at: datetim
         if current_event_id:
             query = query.filter(Event.id != current_event_id)
 
-        existing_conflict = query.first()
-
-        if existing_conflict is not None and existing_conflict.title == location_name:
+        if query.first() is not None:
             return f"Aynı mekan ({location_name}) ve aynı zaman diliminde zaten başka bir etkinliğiniz bulunmaktadır."
     except Exception as e:
-        logger.warning(f"Collision check bypassed: {e}")
+        logger.warning("Collision check bypassed: %s", e)
     return None
 
 
@@ -135,9 +133,9 @@ def send_event_approval_email(creator: User, event: Event, db: Session | None = 
 
     try:
         if db is not None:
-            notify_event_approved(db, get_notification_sender(), creator.id, event.title)
+            notify_event_approved(db, get_notification_sender(db), creator.id, event.title)
     except Exception as exc:
-        logger.error(f"Failed to send event approval notification: {exc}")
+        logger.error("Failed to send event approval notification: %s", exc)
 
 
 def send_event_rejection_email(creator: User, event: Event, reason: str | None, db: Session | None = None) -> None:
@@ -149,12 +147,12 @@ def send_event_rejection_email(creator: User, event: Event, reason: str | None, 
         if db is not None:
             title = "Etkinlik Başvurusu Reddedildi ⚠️"
             body = f"'{event.title}' etkinliğiniz yayınlanamadı: {reason or 'İçerik kurallara uygun bulunamadı.'}"
-            sender = get_notification_sender()
+            sender = get_notification_sender(db)
             sender.send(creator.id, title, body)
             db.add(Notification(user_id=creator.id, title=title, body=body))
             db.commit()
     except Exception as exc:
-        logger.error(f"Failed to send event rejection notification: {exc}")
+        logger.error("Failed to send event rejection notification: %s", exc)
 
 
 def classify_user_event_category_with_llm(title: str, description: str | None = None) -> str | None:

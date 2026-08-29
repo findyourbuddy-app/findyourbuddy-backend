@@ -27,3 +27,7 @@ class EventIngestResult(BaseModel):
     updated: int
     skipped: int
     errors: list[str]
+
+
+class KnownExternalIds(BaseModel):
+    external_ids: list[str]

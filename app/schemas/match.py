@@ -13,6 +13,8 @@ class MatchRead(BaseModel):
     event_id: int
     event_title: str | None = None
     event_category: str | None = None
+    event_is_group: bool = False
+    event_creator_id: int | None = None
     user_a_id: int
     user_b_id: int
     score: float

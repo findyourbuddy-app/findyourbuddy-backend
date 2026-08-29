@@ -22,7 +22,7 @@ from app.services.message_service import (
     send_message,
 )
 from app.services.llm_matching_service import generate_llm_icebreakers
-from app.services.notification_service import notify_new_message
+from app.services.notification_service import notify_new_message, notify_new_message_bulk
 
 router = APIRouter(prefix="/matches/{match_id}/messages", tags=["messages"])
 logger = logging.getLogger(__name__)
@@ -90,9 +90,15 @@ def post_message(
         ) from exc
 
     match = db.get(Match, match_id)
-    recipient_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
-    notify_new_message(db, notification_sender, message, recipient_id)
-    _relay_to_firestore(match_id, message)
+    if match and match.event_id:
+        rows = db.query(Match.user_a_id, Match.user_b_id).filter(Match.event_id == match.event_id).all()
+        recipient_ids = {uid for row in rows for uid in row if uid != current_user.id}
+        notify_new_message_bulk(db, notification_sender, message, recipient_ids)
+        _relay_to_firestore(match_id, message)
+    elif match:
+        recipient_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
+        notify_new_message(db, notification_sender, message, recipient_id)
+        _relay_to_firestore(match_id, message)
 
     return message
 

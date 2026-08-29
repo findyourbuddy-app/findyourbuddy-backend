@@ -1,8 +1,10 @@
 from app.models.block import Block
 from app.models.bookmark import Bookmark
 from app.models.device_token import DeviceToken
+from app.models.double_buddy import DoubleBuddy
 from app.models.event import Event
 from app.models.event_attendance import EventAttendance
+from app.models.event_rating import EventRating
 from app.models.match import Match
 from app.models.match_feedback import MatchFeedback
 from app.models.message import Message
@@ -19,8 +21,10 @@ __all__ = [
     "Block",
     "Bookmark",
     "DeviceToken",
+    "DoubleBuddy",
     "Event",
     "EventAttendance",
+    "EventRating",
     "Match",
     "MatchFeedback",
     "Message",

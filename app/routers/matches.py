@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.datetime_utils import utcnow
 from app.core.deps import get_current_user
 from app.database import get_db
+from app.models.event import Event
+from app.models.match_feedback import MatchFeedback
 from app.models.user import User
 from app.schemas.match import MatchRead
 from app.schemas.match_feedback import MatchFeedbackCreate
@@ -12,7 +15,6 @@ from app.services.match_feedback_service import (
     EventNotFinishedError,
     MatchNotFoundError,
     NotAMatchParticipantError,
-    needs_feedback,
     submit_feedback,
 )
 from app.services.matching_service import (
@@ -25,6 +27,7 @@ from app.services.matching_service import (
 router = APIRouter(prefix="/matches", tags=["matches"])
 
 
+@router.get("", response_model=list[MatchRead])
 @router.get("/", response_model=list[MatchRead])
 def list_my_matches(
     skip: int = Query(default=0, ge=0),
@@ -32,23 +35,55 @@ def list_my_matches(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[MatchRead]:
+    matches_details = list_matches_with_details(db, current_user.id, skip=skip, limit=limit)
+    if not matches_details:
+        return []
+
+    # Batch query finished event IDs and submitted feedback match IDs in 2 queries total
+    event_ids = {m.event_id for m, _, _ in matches_details if m.event_id}
+    finished_event_ids: set[int] = set()
+    if event_ids:
+        now = utcnow()
+        finished_event_ids = {
+            r[0]
+            for r in db.query(Event.id)
+            .filter(Event.id.in_(event_ids), Event.starts_at < now)
+            .all()
+        }
+
+    match_ids = [m.id for m, _, _ in matches_details]
+    submitted_feedback_match_ids: set[int] = set()
+    if match_ids:
+        submitted_feedback_match_ids = {
+            r[0]
+            for r in db.query(MatchFeedback.match_id)
+            .filter(
+                MatchFeedback.match_id.in_(match_ids),
+                MatchFeedback.rater_id == current_user.id,
+            )
+            .all()
+        }
+
     return [
         MatchRead(
             id=match.id,
             event_id=match.event_id,
             event_title=match.event.title if match.event else None,
             event_category=match.event.category if match.event else None,
+            event_is_group=match.event.is_group_event if match.event else False,
+            event_creator_id=match.event.creator_id if match.event else None,
             user_a_id=match.user_a_id,
             user_b_id=match.user_b_id,
             score=match.score,
             created_at=match.created_at,
             other_user=UserPublic.model_validate(other_user),
             last_message=MessageRead.model_validate(last_message) if last_message else None,
-            needs_feedback=needs_feedback(db, match, current_user.id),
+            needs_feedback=(
+                match.event_id in finished_event_ids
+                and match.id not in submitted_feedback_match_ids
+            ),
         )
-        for match, other_user, last_message in list_matches_with_details(
-            db, current_user.id, skip=skip, limit=limit
-        )
+        for match, other_user, last_message in matches_details
     ]
 
 
