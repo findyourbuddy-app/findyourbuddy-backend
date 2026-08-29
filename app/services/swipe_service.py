@@ -167,12 +167,6 @@ def list_swipe_candidates(
         min_age = max_age = max_distance_km = gender_preference = university = zodiac_sign = min_trust_score = None
         is_verified_only = has_voice_note = False
 
-    event = db.get(Event, event_id)
-    is_group_or_system = event is not None and (event.is_group_event or event.creator_id is None)
-
-    if not is_group_or_system and max_distance_km is None:
-        max_distance_km = get_settings().match_max_distance_km
-
     already_swiped_target_ids = db.query(Swipe.target_id).filter(
         Swipe.swiper_id == swiper_id, Swipe.event_id == event_id
     )
@@ -184,11 +178,16 @@ def list_swipe_candidates(
         User.is_active.is_(True),
     )
 
-    if is_group_or_system:
-        attending_user_ids = db.query(EventAttendance.user_id).filter(
-            EventAttendance.event_id == event_id, EventAttendance.status.in_(["approved", "pending"])
-        )
-        query = query.filter(User.id.in_(attending_user_ids))
+    if event_id and event_id > 0:
+        event = db.get(Event, event_id)
+        if event is not None:
+            attending_user_ids = db.query(EventAttendance.user_id).filter(
+                EventAttendance.event_id == event_id, EventAttendance.status.in_(["approved", "pending"])
+            )
+            valid_user_ids = set(uid for (uid,) in attending_user_ids.all())
+            if event.creator_id:
+                valid_user_ids.add(event.creator_id)
+            query = query.filter(User.id.in_(valid_user_ids))
 
     if min_age is not None:
         query = query.filter(User.age.is_not(None), User.age >= min_age)
