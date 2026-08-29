@@ -4,7 +4,7 @@ Etkinlik bazlı arkadaş eşleştirme platformunun ana REST API'si.
 FastAPI · SQLAlchemy 2.0 · Postgres (Supabase) · Alembic · slowapi · APScheduler.
 
 Mimari, veri akışı, eşleşme/trust/kota algoritmaları ve datetime sözleşmesi için:
-**[../docs/mimari.md](../docs/mimari.md)**. Alınan tekil teknik kararlar
+**[docs/mimari.md](docs/mimari.md)**. Alınan tekil teknik kararlar
 `docs/tech-kararlari.md`, yol haritası `docs/yapilacaklar.md`.
 
 Öne çıkanlar:
