@@ -21,35 +21,37 @@ def _ordered_pair(user_a_id: int, user_b_id: int) -> tuple[int, int]:
 _LIKE_DIRECTIONS = (SwipeDirection.LIKE, SwipeDirection.SUPER_LIKE)
 
 
-def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> bool:
-    a_liked_b = db.query(
-        exists().where(
-            Swipe.swiper_id == user_a_id,
-            Swipe.target_id == user_b_id,
-            Swipe.event_id == event_id,
-            Swipe.direction.in_(_LIKE_DIRECTIONS),
-        )
-    ).scalar()
+def _mutual_like_exists(db: Session, user_a_id: int, user_b_id: int, event_id: int | None) -> bool:
+    filter_a = [
+        Swipe.swiper_id == user_a_id,
+        Swipe.target_id == user_b_id,
+        Swipe.direction.in_(_LIKE_DIRECTIONS),
+    ]
+    filter_b = [
+        Swipe.swiper_id == user_b_id,
+        Swipe.target_id == user_a_id,
+        Swipe.direction.in_(_LIKE_DIRECTIONS),
+    ]
+    if event_id is None:
+        filter_a.append(Swipe.event_id.is_(None))
+        filter_b.append(Swipe.event_id.is_(None))
+    else:
+        filter_a.append(Swipe.event_id == event_id)
+        filter_b.append(Swipe.event_id == event_id)
+
+    a_liked_b = db.query(exists().where(*filter_a)).scalar()
     if not a_liked_b:
         return False
-    return db.query(
-        exists().where(
-            Swipe.swiper_id == user_b_id,
-            Swipe.target_id == user_a_id,
-            Swipe.event_id == event_id,
-            Swipe.direction.in_(_LIKE_DIRECTIONS),
-        )
-    ).scalar()
+    return db.query(exists().where(*filter_b)).scalar()
 
 
-def _existing_match(db: Session, user_a_id: int, user_b_id: int, event_id: int) -> bool:
-    return db.query(
-        exists().where(
-            Match.event_id == event_id,
-            Match.user_a_id == user_a_id,
-            Match.user_b_id == user_b_id,
-        )
-    ).scalar()
+def _existing_match(db: Session, user_a_id: int, user_b_id: int, event_id: int | None) -> bool:
+    filters = [Match.user_a_id == user_a_id, Match.user_b_id == user_b_id]
+    if event_id is None:
+        filters.append(Match.event_id.is_(None))
+    else:
+        filters.append(Match.event_id == event_id)
+    return db.query(exists().where(*filters)).scalar()
 
 
 def _interest_score(user_a: User, user_b: User) -> float:
@@ -182,7 +184,7 @@ def _calculate_score(user_a: User, user_b: User) -> float:
     return round((raw_total / total_weight) * trust_boost, 3)
 
 
-def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int) -> Match | None:
+def try_create_match(db: Session, swiper_id: int, target_id: int, event_id: int | None) -> Match | None:
     if not _mutual_like_exists(db, swiper_id, target_id, event_id):
         return None
 

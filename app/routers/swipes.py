@@ -45,11 +45,15 @@ def create_swipe(
             detail="Daily super like limit reached",
         ) from exc
     except DuplicateSwipeError:
-        existing_swipe = db.query(Swipe).filter(
+        filters = [
             Swipe.swiper_id == current_user.id,
             Swipe.target_id == data.target_id,
-            Swipe.event_id == data.event_id,
-        ).first()
+        ]
+        if data.event_id is None:
+            filters.append(Swipe.event_id.is_(None))
+        else:
+            filters.append(Swipe.event_id == data.event_id)
+        existing_swipe = db.query(Swipe).filter(*filters).first()
         if existing_swipe:
             return SwipeRead.model_validate(existing_swipe).model_copy(
                 update={"match_id": None, "matched_user": None}
@@ -90,7 +94,7 @@ def get_quota(
 
 @router.get("/candidates", response_model=list[UserRead])
 def get_swipe_candidates(
-    event_id: int,
+    event_id: int | None = Query(default=None),
     min_age: int | None = None,
     max_age: int | None = None,
     max_distance_km: float | None = None,

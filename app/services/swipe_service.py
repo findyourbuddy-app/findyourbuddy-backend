@@ -58,14 +58,13 @@ def _likes_made_today(db: Session, swiper_id: int) -> int:
     )
 
 
-def _already_swiped(db: Session, swiper_id: int, target_id: int, event_id: int) -> bool:
-    return db.query(
-        exists().where(
-            Swipe.swiper_id == swiper_id,
-            Swipe.target_id == target_id,
-            Swipe.event_id == event_id,
-        )
-    ).scalar()
+def _already_swiped(db: Session, swiper_id: int, target_id: int, event_id: int | None) -> bool:
+    filters = [Swipe.swiper_id == swiper_id, Swipe.target_id == target_id]
+    if event_id is None:
+        filters.append(Swipe.event_id.is_(None))
+    else:
+        filters.append(Swipe.event_id == event_id)
+    return db.query(exists().where(*filters)).scalar()
 
 
 def get_swipe_quota(db: Session, swiper_id: int) -> dict:
@@ -105,7 +104,8 @@ def record_swipe(db: Session, swiper_id: int, data: SwipeCreate) -> Swipe:
     if _already_swiped(db, swiper_id, data.target_id, data.event_id):
         raise DuplicateSwipeError(data.target_id)
 
-    join_event(db, data.event_id, swiper_id)
+    if data.event_id is not None:
+        join_event(db, data.event_id, swiper_id)
 
     swipe = Swipe(swiper_id=swiper_id, **data.model_dump())
     db.add(swipe)
@@ -113,14 +113,15 @@ def record_swipe(db: Session, swiper_id: int, data: SwipeCreate) -> Swipe:
     db.refresh(swipe)
 
     # Gracefully remove target_id from the swiper's cached candidate list in Redis
-    CacheService.remove_swiped_candidate(swiper_id, data.event_id, data.target_id)
+    if data.event_id is not None:
+        CacheService.remove_swiped_candidate(swiper_id, data.event_id, data.target_id)
     
     return swipe
 
 
 def list_swipe_candidates(
     db: Session,
-    event_id: int,
+    event_id: int | None,
     swiper_id: int,
     min_age: int | None = None,
     max_age: int | None = None,

@@ -80,6 +80,7 @@ def list_events(
     skip: int = 0,
     limit: int = 50,
     origin: str | None = None,
+    is_group_event: bool | None = None,
 ) -> list[Event]:
     query = db.query(Event).filter(Event.is_approved.isnot(False))
     if category is not None:
@@ -87,13 +88,12 @@ def list_events(
     if upcoming_only:
         cutoff = utcnow() - timedelta(minutes=30)
         query = query.filter(Event.starts_at >= cutoff)
-    # Filtering "user" origin client-side over a date-sorted page would only
-    # ever see user events once enough system events (there can be
-    # thousands) have scrolled past chronologically -- do it in the query.
     if origin == "system":
         query = query.filter(Event.creator_id.is_(None))
     elif origin == "user":
         query = query.filter(Event.creator_id.isnot(None))
+    if is_group_event is not None:
+        query = query.filter(Event.is_group_event == is_group_event)
     return query.order_by(Event.starts_at).offset(skip).limit(limit).all()
 
 

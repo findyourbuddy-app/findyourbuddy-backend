@@ -8,7 +8,7 @@ from app.schemas.user import UserPublic, UserRead
 
 class SwipeCreate(BaseModel):
     target_id: int
-    event_id: int
+    event_id: int | None = None
     direction: SwipeDirection
 
 
@@ -18,7 +18,7 @@ class SwipeRead(BaseModel):
     id: int
     swiper_id: int
     target_id: int
-    event_id: int
+    event_id: int | None = None
     direction: SwipeDirection
     created_at: datetime
     match_id: int | None = None
@@ -35,4 +35,4 @@ class SwipeQuota(BaseModel):
 
 class LikerRead(BaseModel):
     user: UserRead
-    event_id: int
+    event_id: int | None = None
