@@ -7,6 +7,11 @@ class MessageCreate(BaseModel):
     content: str
     message_type: str = "text"
     media_url: str | None = None
+    # Not persisted -- forwarded to Firestore so the client can size the image
+    # bubble immediately and match the delivered message to its local placeholder.
+    media_width: int | None = None
+    media_height: int | None = None
+    client_temp_id: str | None = None
 
     @field_validator("content")
     @classmethod

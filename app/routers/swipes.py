@@ -45,11 +45,15 @@ def create_swipe(
             detail="Daily super like limit reached",
         ) from exc
     except DuplicateSwipeError:
-        existing_swipe = db.query(Swipe).filter(
+        filters = [
             Swipe.swiper_id == current_user.id,
             Swipe.target_id == data.target_id,
-            Swipe.event_id == data.event_id,
-        ).first()
+        ]
+        if data.event_id is None:
+            filters.append(Swipe.event_id.is_(None))
+        else:
+            filters.append(Swipe.event_id == data.event_id)
+        existing_swipe = db.query(Swipe).filter(*filters).first()
         if existing_swipe:
             return SwipeRead.model_validate(existing_swipe).model_copy(
                 update={"match_id": None, "matched_user": None}
@@ -90,7 +94,7 @@ def get_quota(
 
 @router.get("/candidates", response_model=list[UserRead])
 def get_swipe_candidates(
-    event_id: int,
+    event_id: int | None = Query(default=None),
     min_age: int | None = None,
     max_age: int | None = None,
     max_distance_km: float | None = None,
@@ -100,6 +104,7 @@ def get_swipe_candidates(
     is_verified_only: bool | None = None,
     has_voice_note: bool | None = None,
     min_trust_score: int | None = None,
+    looking_for: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[UserRead]:
@@ -116,6 +121,7 @@ def get_swipe_candidates(
         is_verified_only=is_verified_only,
         has_voice_note=has_voice_note,
         min_trust_score=min_trust_score,
+        looking_for=looking_for,
     )
     event_titles = get_upcoming_own_event_titles(db, [c.id for c in candidates])
     return [

@@ -17,6 +17,10 @@
 - [x] **Scraping — İlk Çalıştırma Gecikmesi**: APScheduler `interval` trigger'ı başlangıçta tam interval süresi bekleyerek ilk scraping'i 6 saat erteliyordu; `next_run_time=datetime.now()` ile servis açılışında hemen çalışır hale getirildi.
 - [x] **Scraping — Inline Import**: `normalizer.py` içindeki `import html/re` fonksiyon bloğu içinden dosya başına taşındı.
 - [x] **Medya Depolama — S3MediaStorage**: `S3MediaStorage` sınıfı hem AWS S3 hem Cloudflare R2 için tamamen yazıldı; `boto3` inline import dosya başına alındı. Production'a geçmek için yalnızca `.env` değişkenleri ayarlanmalı.
+- [x] **Alembic — iki head birleştirildi**: `f1a9c3d7b2e4` sonrası zincir ikiye ayrılmıştı (`e5f6a7b8c9d0` class_year dalı + `b3d4e5f6a7b8` notification-kolonları dalı), `alembic upgrade head` hata veriyordu. `c4f8a2e1d0b9` merge migration'ı eklendi.
+- [x] **Alembic — `event_ratings` migration'ı eklendi**: `EventRating` modeli ve `POST /events/{id}/rating` + `GET /events/{id}` canlıda çalışıyordu ama tabloyu oluşturan migration yoktu (sadece testlerde `create_all` ile vardı). `d5a9b3f2e1c0` eklendi.
+- [x] **Alembic — ölü `phone_verification_codes` tablosu düşürüldü**: Backend SMS OTP yaklaşımı hiç kullanılmadı (telefon doğrulama Firebase'de). `e6b0c4a3f2d1` ile tablo kaldırıldı; `users.phone_number` / `users.phone_verified` kolonları duruyor.
+- [x] **`.env.example` ↔ `config.py` senkronu**: eksik anahtarlar eklendi (`JWT_REFRESH_EXPIRE_DAYS`, `DAILY_SUPER_LIKE_LIMIT`, `PREMIUM_DAILY_SUPER_LIKE_LIMIT`, `WEEKLY_EVENT_CREATION_LIMIT`, `TRUST_SCORE_SUSPENSION_*`, `ADMIN_ALERT_EMAIL`, `GEOCODING_BASE_URL`, `EXPO_PUSH_API_URL`), `MEDIA_STORAGE_BACKEND` örnekte `local`'a çekildi (fresh setup S3'süz kırılmasın), `festival` kategorisi eklendi.
 
 ---
 
@@ -39,3 +43,14 @@
   S3_SECRET_ACCESS_KEY=...
   S3_PUBLIC_URL_BASE=https://...              # CDN veya bucket public URL
   ```
+
+### 4. Frontend — Native Modül Özellikleri (Development / EAS Build)
+Aşağıdaki 3 özellik Expo Go'da native modül desteklemediği için tamamen
+placeholder ile devre dışı (gerçek kod dosyada yorum bloğunda duruyor). Bağımlılıklar
+(`react-native-maps`, `react-native-webrtc`, `expo-dev-client`) ve `eas.json` hazır.
+- [ ] `src/screens/CallScreen.tsx` — WebRTC sesli/görüntülü arama. Backend tarafı hazır
+      (`/calls/ice-servers`, Firestore signaling); `.env`'de `TURN_URLS` set edilmeli.
+- [ ] `src/components/maps/EventsMapView.tsx` — harita üzerinde etkinlik pinleri.
+- [ ] `src/components/maps/MapLocationPicker.tsx` — etkinlik oluştururken harita ile konum seçimi.
+- [ ] `eas build --profile development` ile dev client alınıp bu 3 dosyadaki yorum blokları
+      açılınca test edilmeli; `.web.tsx` varyantları web'de zaten çalışıyor.

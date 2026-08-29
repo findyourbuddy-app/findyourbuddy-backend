@@ -19,7 +19,6 @@ from app.services.bookmark_service import (
 router = APIRouter(prefix="/bookmarks", tags=["bookmarks"])
 
 
-@router.get("", response_model=list[BookmarkRead])
 @router.get("/", response_model=list[BookmarkRead])
 def list_my_bookmarks(
     skip: int = Query(default=0, ge=0),

@@ -14,9 +14,12 @@ from app.models.user import User
 from app.schemas.message import MessageCreate, MessageRead, MessagesMarkedRead
 from app.services.message_service import (
     BlockedParticipantError,
+    GroupChannelPostForbiddenError,
     MatchNotFoundError,
     MessageBlockedError,
     NotMatchParticipantError,
+    group_match_ids_for_event,
+    is_group_match,
     list_messages,
     mark_messages_as_read,
     send_message,
@@ -83,6 +86,11 @@ def post_message(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access messages with a blocked user"
         ) from exc
+    except GroupChannelPostForbiddenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the event organizer can post in this announcement channel",
+        ) from exc
     except MessageBlockedError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -90,38 +98,53 @@ def post_message(
         ) from exc
 
     match = db.get(Match, match_id)
-    if match and match.event_id:
-        rows = db.query(Match.user_a_id, Match.user_b_id).filter(Match.event_id == match.event_id).all()
-        recipient_ids = {uid for row in rows for uid in row if uid != current_user.id}
-        notify_new_message_bulk(db, notification_sender, message, recipient_ids)
-        _relay_to_firestore(match_id, message)
-    elif match:
-        recipient_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
-        notify_new_message(db, notification_sender, message, recipient_id)
-        _relay_to_firestore(match_id, message)
+    if match:
+        if is_group_match(match):
+            channel_match_ids = group_match_ids_for_event(db, match.event_id)
+            recipient_ids = {
+                uid
+                for m in db.query(Match).filter(Match.event_id == match.event_id).all()
+                for uid in (m.user_a_id, m.user_b_id)
+            }
+            recipient_ids.discard(current_user.id)
+            notify_new_message_bulk(db, notification_sender, message, recipient_ids)
+            _relay_to_firestore(channel_match_ids, message, data)
+        else:
+            recipient_id = match.user_b_id if match.user_a_id == current_user.id else match.user_a_id
+            notify_new_message(db, notification_sender, message, recipient_id)
+            _relay_to_firestore([match_id], message, data)
 
     return message
 
 
-def _relay_to_firestore(match_id: int, message: Message) -> None:
-    """Writes the already-moderated, already-rate-limited message into
-    Firestore for real-time delivery. Best-effort: a Firestore outage
-    shouldn't fail the send, since the message is already durably saved
-    in Postgres and push-notified."""
+def _relay_to_firestore(match_ids: list[int], message: Message, data: MessageCreate) -> None:
+    """Writes the already-moderated, already-rate-limited message into every
+    given match's Firestore channel for real-time delivery. Group announcement
+    channels fan out to each organizer<->attendee match so every attendee's
+    listener receives it. Best-effort: a Firestore outage shouldn't fail the
+    send, since the message is already durably saved in Postgres and
+    push-notified."""
     db_client = get_firestore_client()
     if db_client is None:
         return
-    try:
-        db_client.collection("matches").document(str(match_id)).collection("messages").add({
-            "sender_id": message.sender_id,
-            "content": message.content,
-            "message_type": message.message_type,
-            "media_url": message.media_url,
-            "created_at": message.created_at,
-            "is_read": False,
-        })
-    except Exception:
-        logger.warning("Failed to relay message %s to Firestore", message.id, exc_info=True)
+    payload = {
+        "sender_id": message.sender_id,
+        "content": message.content,
+        "message_type": message.message_type,
+        "media_url": message.media_url,
+        "media_width": data.media_width,
+        "media_height": data.media_height,
+        "client_temp_id": data.client_temp_id,
+        "created_at": message.created_at,
+        "is_read": False,
+    }
+    for mid in match_ids:
+        try:
+            db_client.collection("matches").document(str(mid)).collection("messages").add(dict(payload))
+        except Exception:
+            logger.warning(
+                "Failed to relay message %s to Firestore (match %s)", message.id, mid, exc_info=True
+            )
 
 
 @router.patch("/read", response_model=MessagesMarkedRead)
@@ -139,6 +162,10 @@ def mark_read(
     except NotMatchParticipantError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this match"
+        ) from exc
+    except BlockedParticipantError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Cannot access messages with a blocked user"
         ) from exc
     return MessagesMarkedRead(count=count)
 

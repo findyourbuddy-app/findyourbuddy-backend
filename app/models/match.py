@@ -12,7 +12,7 @@ class Match(Base):
     __table_args__ = (UniqueConstraint("event_id", "user_a_id", "user_b_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), index=True)
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("events.id"), nullable=True, index=True)
     user_a_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     user_b_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     score: Mapped[float] = mapped_column()

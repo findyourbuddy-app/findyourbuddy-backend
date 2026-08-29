@@ -18,6 +18,16 @@ class EventCreate(BaseModel):
     ticket_price: float | None = None
     image_url: str | None = None
 
+    @field_validator("starts_at")
+    @classmethod
+    def _starts_at_to_naive_utc(cls, v: datetime) -> datetime:
+        # The DB column is timezone-naive and the whole codebase treats naive
+        # datetimes as UTC. Convert an offset-aware value (e.g. the client's
+        # "...Z") to UTC and drop the tzinfo so it stores as UTC wall-clock.
+        if v.tzinfo is not None:
+            return v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+
     @field_validator("title", "description", "location_name", "category", "image_url")
     @classmethod
     def _sanitize_event_strings(cls, v: str | None) -> str | None:

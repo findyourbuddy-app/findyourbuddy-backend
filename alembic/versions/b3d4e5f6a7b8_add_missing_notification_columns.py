@@ -17,8 +17,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Use IF NOT EXISTS: _auto_migrate_db may have already added
-    # notification_type and data on older deployments.
+    # Use IF NOT EXISTS: some deployments were bootstrapped from
+    # Base.metadata.create_all and already have these columns.
     conn = op.get_bind()
     dialect = conn.dialect.name
 

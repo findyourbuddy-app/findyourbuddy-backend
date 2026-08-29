@@ -5,6 +5,10 @@ uyulması gereken standartları belgeler. Yeni bir özellik eklerken burayla
 çelişen bir şey yapıyorsanız ya kararı burada güncelleyin ya da mevcut
 standarda uyun.
 
+> Dört repoyu kapsayan mimari genel bakış, veri akışı ve güncel algoritma
+> formülleri (eşleşme, trust score, swipe kotası, datetime sözleşmesi) için:
+> **[mimari.md](mimari.md)**.
+
 ## Stack
 
 - **Framework:** FastAPI

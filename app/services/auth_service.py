@@ -7,6 +7,7 @@ from app.core.datetime_utils import utcnow
 from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.core.security import hash_password, verify_password
 from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
@@ -76,7 +77,7 @@ def register_user(db: Session, data: UserCreate) -> User:
         bonus_swipe_credits=REFERRAL_BONUS_SWIPES if inviter is not None else 0,
         phone_number=phone,
         phone_verified=False,
-        trust_score=50,
+        trust_score=get_settings().trust_base_score,
         hobbies=[],
     )
     db.add(user)

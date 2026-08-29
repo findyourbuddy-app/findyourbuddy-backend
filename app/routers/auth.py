@@ -41,7 +41,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-@router.post("/register/", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 @limiter.limit(auth_rate_limit)
 def register(
     request: Request,
@@ -62,7 +61,6 @@ def register(
 
 
 @router.post("/login", response_model=Token)
-@router.post("/login/", response_model=Token)
 @limiter.limit(auth_rate_limit)
 def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)) -> Token:
     try:
@@ -82,7 +80,6 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)) -
 
 
 @router.post("/refresh", response_model=Token)
-@router.post("/refresh/", response_model=Token)
 @limiter.limit(auth_rate_limit)
 def refresh(request: Request, data: RefreshRequest, db: Session = Depends(get_db)) -> Token:
     credentials_error = HTTPException(
@@ -107,7 +104,6 @@ def refresh(request: Request, data: RefreshRequest, db: Session = Depends(get_db
 
 
 @router.post("/password-reset/request")
-@router.post("/password-reset/request/")
 @limiter.limit(auth_rate_limit)
 def request_reset(
     request: Request,
@@ -124,7 +120,6 @@ def request_reset(
 
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
-@router.post("/password-reset/confirm/", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit(auth_rate_limit)
 def confirm_reset(request: Request, data: PasswordResetConfirm, db: Session = Depends(get_db)) -> None:
     try:
@@ -152,7 +147,6 @@ def change_my_password(
 
 
 @router.post("/firebase-login", response_model=Token)
-@router.post("/firebase-login/", response_model=Token)
 @limiter.limit(auth_rate_limit)
 def firebase_login(
     request: Request,

@@ -35,6 +35,24 @@ def test_create_and_list_event(client: TestClient, auth_headers: dict[str, str])
     assert "Trail run" in titles
 
 
+def test_create_event_normalizes_offset_aware_start_to_utc(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    # Client at UTC+3 sends 20:00 local -> "17:00:00+03:00".
+    local_start = datetime.now(timezone(timedelta(hours=3))) + timedelta(days=1)
+    local_start = local_start.replace(hour=20, minute=0, second=0, microsecond=0)
+
+    create_response = client.post(
+        "/events/", headers=auth_headers, json=_event_payload(starts_at=local_start.isoformat())
+    )
+    assert create_response.status_code == 201
+
+    stored = create_response.json()["starts_at"]
+    # Stored as the UTC wall-clock (17:00), no offset.
+    assert "+" not in stored and not stored.endswith("Z")
+    assert datetime.fromisoformat(stored).hour == 17
+
+
 def test_get_event_returns_404_for_unknown_id(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
@@ -227,9 +245,12 @@ def test_create_event_sanitizes_xss_description(
     assert "alert(1)" in cleaned_desc
 
 
-def test_rate_event_and_impact_trust_score(
-    client: TestClient, auth_headers: dict[str, str], db_session: Session
-) -> None:
+def test_host_trust_score_reflects_ratings_received(db_session: Session) -> None:
+    from app.config import get_settings
+    from app.models.event_rating import EventRating
+    from app.services.trust_service import recompute_trust_score
+
+    s = get_settings()
     creator = User(
         email="eventcreator@example.com",
         hashed_password="hash",
@@ -238,11 +259,19 @@ def test_rate_event_and_impact_trust_score(
         phone_number="+905550000000",
         trust_score=50,
     )
-    db_session.add(creator)
+    raters = [
+        User(
+            email=f"rater{i}@example.com",
+            hashed_password="hash",
+            display_name=f"Rater {i}",
+            referral_code=f"RATER{i}23",
+            phone_number=f"+90555000010{i}",
+        )
+        for i in range(2)
+    ]
+    db_session.add_all([creator, *raters])
     db_session.commit()
-    db_session.refresh(creator)
 
-    rater = db_session.query(User).filter(User.email != "eventcreator@example.com").first()
     event = Event(
         title="Test Creator Event",
         category="coffee",
@@ -254,21 +283,14 @@ def test_rate_event_and_impact_trust_score(
     )
     db_session.add(event)
     db_session.commit()
-    db_session.refresh(event)
 
-    attendance = EventAttendance(event_id=event.id, user_id=rater.id, status="approved")
-    db_session.add(attendance)
+    for rater in raters:
+        db_session.add(EventRating(event_id=event.id, user_id=rater.id, rating=5))
     db_session.commit()
 
-    response = client.post(
-        f"/events/{event.id}/rate",
-        headers=auth_headers,
-        json={"rating": 5, "comment": "Awesome event!"},
-    )
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
-
+    recompute_trust_score(db_session, creator.id)
     db_session.refresh(creator)
-    assert creator.trust_score == 53
+    # avg 5.0 -> base + full positive swing
+    assert creator.trust_score == s.trust_base_score + s.trust_rating_swing_points
 
 

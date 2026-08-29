@@ -50,6 +50,16 @@ def test_ingest_creates_new_event(db_session: Session) -> None:
     assert event.title == "Trail run"
 
 
+def test_ingest_normalizes_offset_aware_start_to_naive_utc(db_session: Session) -> None:
+    # 21:00 Istanbul (+03:00) is 18:00 UTC -- must not shift or roll the date.
+    start = datetime(2026, 9, 1, 21, 0, tzinfo=timezone(timedelta(hours=3)))
+    ingest_events(db_session, EventIngestBatch(events=[_payload(starts_at=start.isoformat())]))
+
+    event = db_session.query(Event).filter(Event.external_id == "evt-1").one()
+    assert event.starts_at == datetime(2026, 9, 1, 18, 0)
+    assert event.starts_at.tzinfo is None
+
+
 def test_ingest_stores_image_url(db_session: Session) -> None:
     ingest_events(
         db_session,

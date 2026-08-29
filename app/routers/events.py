@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.deps import get_current_user
+from app.core.notifications import NotificationSender, get_notification_sender
 from app.core.rate_limit import event_writes_rate_limit, limiter
 from app.database import get_db
 from app.models.event import Event
@@ -41,6 +42,7 @@ from app.services.event_service import (
     list_attending_events,
     list_events,
 )
+from app.services.trust_service import recompute_trust_score
 from app.services.media_service import MediaStorage, get_media_storage
 from app.services.media_validation import ImageTooLargeError, InvalidImageError, validate_image
 from app.services.payment_service import claim_payment_callback
@@ -54,7 +56,6 @@ EVENT_CREDITS_PRICE_TRY = "49.00"
 router = APIRouter(prefix="/events", tags=["events"])
 
 
-@router.get("", response_model=list[EventRead])
 @router.get("/", response_model=list[EventRead])
 def list_all_events(
     category: str | None = None,
@@ -62,13 +63,14 @@ def list_all_events(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     origin: str | None = None,
+    is_group_event: bool | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[EventRead]:
     if origin not in (None, "system", "user"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="origin must be 'system' or 'user'")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="origin must be 'origin' must be 'system' or 'user'")
     events = list_events(
-        db, category=category, upcoming_only=upcoming_only, skip=skip, limit=limit, origin=origin
+        db, category=category, upcoming_only=upcoming_only, skip=skip, limit=limit, origin=origin, is_group_event=is_group_event
     )
     event_ids = [e.id for e in events]
     attendee_counts = count_attendees_bulk(db, event_ids)
@@ -416,7 +418,6 @@ def read_event(
     )
 
 
-@router.post("", response_model=EventRead, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=EventRead, status_code=status.HTTP_201_CREATED)
 @limiter.limit(event_writes_rate_limit)
 def create_new_event(
@@ -454,6 +455,7 @@ def attend_event(
     event_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sender: NotificationSender = Depends(get_notification_sender),
 ) -> EventRead:
     event = get_event(db, event_id)
     if event is None:
@@ -461,10 +463,13 @@ def attend_event(
     attendance = join_event(db, event_id, current_user.id)
     
     if event.creator_id and event.creator_id != current_user.id:
+        title = "Yeni Katılım İsteği! 🎉"
+        body = f"{current_user.display_name}, '{event.title}' etkinliğine katılmak istiyor."
+        sender.send(event.creator_id, title, body, data={"event_id": event.id, "notification_type": "event_request"})
         db.add(Notification(
             user_id=event.creator_id,
-            title="Yeni Katılım İsteği!",
-            body=f"{current_user.display_name}, '{event.title}' etkinliğine katılmak istiyor.",
+            title=title,
+            body=body,
             event_id=event.id,
             notification_type="event_request",
             data={"event_id": event.id},
@@ -560,6 +565,7 @@ def handle_join_request(
     data: JoinRequestAction,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sender: NotificationSender = Depends(get_notification_sender),
 ) -> EventRead:
     event = db.get(Event, event_id)
     if event is None:
@@ -595,12 +601,17 @@ def handle_join_request(
     else:
         attendance.status = "rejected"
 
-    status_label = "onaylandı" if data.approved else "reddedildi"
+    status_label = "onaylandı 🎉" if data.approved else "reddedildi"
+    title = "Grup Katılım Sonucu"
+    body = f"'{event.title}' grubuna katılım isteğin {status_label}."
+    sender.send(user_id, title, body, data={"event_id": event.id, "notification_type": "event_response"})
     db.add(Notification(
         user_id=user_id,
-        title="Grup Katılım Sonucu",
-        body=f"'{event.title}' grubuna katılım isteğin {status_label}.",
+        title=title,
+        body=body,
         event_id=event.id,
+        notification_type="event_response",
+        data={"event_id": event.id},
     ))
     db.commit()
 
@@ -618,6 +629,7 @@ def approve_all_join_requests(
     event_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sender: NotificationSender = Depends(get_notification_sender),
 ) -> EventRead:
     event = db.get(Event, event_id)
     if event is None:
@@ -648,11 +660,16 @@ def approve_all_join_requests(
                 score=1.0,
                 is_active=True,
             ))
+        title = "Grup Katılım Sonucu"
+        body = f"'{event.title}' grubuna katılım isteğin onaylandı. 🎉"
+        sender.send(attendance.user_id, title, body, data={"event_id": event.id, "notification_type": "event_response"})
         db.add(Notification(
             user_id=attendance.user_id,
-            title="Grup Katılım Sonucu",
-            body=f"'{event.title}' grubuna katılım isteğin onaylandı.",
+            title=title,
+            body=body,
             event_id=event.id,
+            notification_type="event_response",
+            data={"event_id": event.id},
         ))
 
     db.commit()
@@ -664,45 +681,6 @@ def approve_all_join_requests(
             "is_pending": is_pending(db, event_id, current_user.id),
         }
     )
-
-
-@router.get("/{event_id}/attendees", response_model=list[UserRead])
-def get_event_attendees(
-    event_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> list[User]:
-    event = db.get(Event, event_id)
-    if event is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-    
-    attendees = (
-        db.query(User)
-        .join(EventAttendance, EventAttendance.user_id == User.id)
-        .filter(EventAttendance.event_id == event_id, EventAttendance.status == "approved")
-        .all()
-    )
-    return attendees
-
-
-@router.post("/{event_id}/impressions", status_code=status.HTTP_204_NO_CONTENT)
-def record_event_impression(
-    event_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> None:
-    """Records an impression when an event card is rendered/viewed by a user."""
-    return None
-
-
-@router.post("/impressions", status_code=status.HTTP_204_NO_CONTENT)
-def record_bulk_event_impressions(
-    event_ids: list[int],
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> None:
-    """Records impressions in bulk when a list of event cards is rendered."""
-    return None
 
 
 @router.post("/{event_id}/rate")
@@ -746,18 +724,11 @@ def rate_event(
     )
     db.add(rating_record)
 
-    # Impact Host / Creator Trust Score if event was created by a user
+    # Recompute the host's trust score off the new rating (and everything else).
     creator_trust_score = None
     if event.creator_id:
-        creator = db.get(User, event.creator_id)
-        if creator:
-            if payload.rating >= 4:
-                boost = 3 if payload.rating == 5 else 2
-                creator.trust_score += boost
-            elif payload.rating <= 2:
-                penalty = 4 if payload.rating == 1 else 2
-                creator.trust_score -= penalty
-            creator_trust_score = creator.trust_score
+        db.flush()
+        creator_trust_score = recompute_trust_score(db, event.creator_id, commit=False)
 
     db.commit()
     return {

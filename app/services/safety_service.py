@@ -5,6 +5,7 @@ from app.models.block import Block
 from app.models.report import Report, ReportStatus
 from app.models.user import User
 from app.schemas.safety import ReportCreate
+from app.services.trust_service import recompute_trust_score
 
 
 class CannotBlockSelfError(Exception):
@@ -41,6 +42,7 @@ def block_user(db: Session, blocker_id: int, blocked_id: int) -> Block:
     db.add(block)
     db.commit()
     db.refresh(block)
+    recompute_trust_score(db, blocked_id)
     return block
 
 
@@ -55,6 +57,7 @@ def unblock_user(db: Session, blocker_id: int, blocked_id: int) -> None:
 
     db.delete(block)
     db.commit()
+    recompute_trust_score(db, blocked_id)
 
 
 def is_blocked(db: Session, user_a_id: int, user_b_id: int) -> bool:
@@ -107,6 +110,7 @@ def create_report(db: Session, reporter_id: int, data: ReportCreate) -> Report:
     db.add(report)
     db.commit()
     db.refresh(report)
+    recompute_trust_score(db, data.reported_user_id)
     return report
 
 
@@ -133,4 +137,5 @@ def update_report_status(db: Session, report_id: int, new_status: ReportStatus) 
     report.status = new_status
     db.commit()
     db.refresh(report)
+    recompute_trust_score(db, report.reported_user_id)
     return report

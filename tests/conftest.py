@@ -20,8 +20,14 @@ class FakeNotificationSender:
     def __init__(self) -> None:
         self.sent: list[tuple[int, str, str]] = []
 
-    def send(self, user_id: int, title: str, body: str) -> None:
+    def send(self, user_id: int, title: str, body: str, data: dict | None = None) -> None:
         self.sent.append((user_id, title, body))
+
+    def send_bulk(
+        self, user_ids: list[int], title: str, body: str, data: dict | None = None
+    ) -> None:
+        for user_id in user_ids:
+            self.send(user_id, title, body, data)
 
 
 @pytest.fixture()

@@ -133,7 +133,7 @@ def send_event_approval_email(creator: User, event: Event, db: Session | None = 
 
     try:
         if db is not None:
-            notify_event_approved(db, get_notification_sender(db), creator.id, event.title)
+            notify_event_approved(db, get_notification_sender(db), creator.id, event.title, event.id)
     except Exception as exc:
         logger.error("Failed to send event approval notification: %s", exc)
 
@@ -149,7 +149,12 @@ def send_event_rejection_email(creator: User, event: Event, reason: str | None, 
             body = f"'{event.title}' etkinliğiniz yayınlanamadı: {reason or 'İçerik kurallara uygun bulunamadı.'}"
             sender = get_notification_sender(db)
             sender.send(creator.id, title, body)
-            db.add(Notification(user_id=creator.id, title=title, body=body))
+            db.add(Notification(
+                user_id=creator.id,
+                title=title,
+                body=body,
+                notification_type="event_rejected",
+            ))
             db.commit()
     except Exception as exc:
         logger.error("Failed to send event rejection notification: %s", exc)

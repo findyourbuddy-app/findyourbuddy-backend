@@ -25,7 +25,13 @@ from app.services.device_token_service import register_device_token, unregister_
 from app.services.export_service import export_user_data
 from app.services.llm_matching_service import generate_llm_kanka_synergy
 from app.services.media_service import MediaStorage, get_media_storage
-from app.services.media_validation import ImageTooLargeError, InvalidImageError, compress_image, validate_image
+from app.services.media_validation import (
+    ImageTooLargeError,
+    InvalidImageError,
+    compress_image,
+    validate_chat_image,
+    validate_image,
+)
 from app.services.payment_service import apply_purchase, claim_payment_callback
 from app.services.recommendation_service import RecommendationService
 from app.services.safety_service import blocked_user_ids
@@ -74,8 +80,25 @@ def _upload_validated_photo(file: UploadFile, storage: MediaStorage) -> str:
     return storage.upload(io.BytesIO(compressed), "photo.jpg")
 
 
+def _upload_chat_image(file: UploadFile, storage: MediaStorage) -> str:
+    """Chat photos are stored at their original resolution -- unlike profile
+    photos they are not downscaled or re-encoded."""
+    try:
+        file.file.seek(0)
+        data, ext = validate_chat_image(file.file)
+    except InvalidImageError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid image file"
+        ) from exc
+    except ImageTooLargeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large"
+        ) from exc
+
+    return storage.upload(io.BytesIO(data), f"chat{ext}")
+
+
 @router.get("/me", response_model=UserRead)
-@router.get("/me/", response_model=UserRead)
 def read_current_user(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
@@ -146,7 +169,7 @@ def upload_chat_media(
     current_user: User = Depends(get_current_user),
     storage: MediaStorage = Depends(get_media_storage),
 ) -> dict:
-    url = _upload_validated_photo(file, storage)
+    url = _upload_chat_image(file, storage)
     return {"url": url}
 
 
@@ -200,7 +223,6 @@ def upload_voice_note(
 
 
 @router.get("/me/photos", response_model=list[UserPhotoRead])
-@router.get("/me/photos/", response_model=list[UserPhotoRead])
 def list_my_photos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
