@@ -13,7 +13,7 @@ jobs:
       JWT_SECRET_KEY: ci-test-secret
       SCRAPER_API_KEY: ci-test-scraper-key
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -34,7 +34,7 @@ jobs:
     # (Dependabot opens the PRs).
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
