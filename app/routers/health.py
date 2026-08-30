@@ -6,12 +6,27 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_staff_user
+from app.config import get_settings
+from app.core.deps import get_current_staff_user, require_metrics_access
 from app.database import get_db
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/health", tags=["health"])
+
+
+def _probe_redis(redis_url: str) -> str:
+    """"ok" / "error" / "not_configured" -- a fast liveness ping for /ready."""
+    if not redis_url:
+        return "not_configured"
+    try:
+        import redis
+
+        redis.from_url(redis_url, socket_connect_timeout=0.3, socket_timeout=0.3).ping()
+        return "ok"
+    except Exception as exc:
+        logger.warning("Readiness check: redis unreachable: %s", exc)
+        return "error"
 
 
 @router.get("/")
@@ -34,7 +49,7 @@ def check_database_status(db: Session = Depends(get_db)) -> JSONResponse:
 @router.get("/monitoring/metrics", response_class=PlainTextResponse)
 def prometheus_metrics(
     db: Session = Depends(get_db),
-    _staff_user: User = Depends(get_current_staff_user),
+    _access: None = Depends(require_metrics_access),
 ) -> str:
     """Exports Prometheus-compatible metrics for system health and domain
     statistics. Staff-only: these numbers include user demographics and
@@ -185,21 +200,29 @@ def prometheus_metrics(
 
 @router.get("/ready")
 def check_readiness(db: Session = Depends(get_db)) -> JSONResponse:
-    """Deep readiness check — verifies DB connectivity and optional external
-    services. Returns 503 if any required dependency is unavailable."""
+    """Deep readiness check. A required dependency down (database) returns 503;
+    an optional one down (Redis cache, Firebase relay) still returns 200 but
+    reports ``status: "degraded"`` so slow-mode operation is visible."""
     checks: dict[str, str] = {}
-    healthy = True
+    required_ok = True
+    degraded = False
 
-    # Database
+    # Database -- required
     try:
         db.execute(text("SELECT 1"))
         checks["database"] = "ok"
     except SQLAlchemyError as exc:
         logger.error("Readiness check: database unreachable: %s", exc)
         checks["database"] = "error"
-        healthy = False
+        required_ok = False
 
-    # Firebase Admin SDK
+    # Redis cache -- optional, but if it is configured and down the app silently
+    # falls back to slower Postgres-only reads; surface that as degraded.
+    checks["redis"] = _probe_redis(get_settings().redis_url)
+    if checks["redis"] == "error":
+        degraded = True
+
+    # Firebase Admin SDK -- optional (chat relay)
     try:
         import firebase_admin
         if firebase_admin._apps:
@@ -209,10 +232,18 @@ def check_readiness(db: Session = Depends(get_db)) -> JSONResponse:
     except Exception as exc:
         logger.warning("Readiness check: firebase check failed: %s", exc)
         checks["firebase"] = "error"
+        degraded = True
+
+    if not required_ok:
+        state = "error"
+    elif degraded:
+        state = "degraded"
+    else:
+        state = "ok"
 
     return JSONResponse(
-        status_code=status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE,
-        content={"status": "ok" if healthy else "degraded", "checks": checks},
+        status_code=status.HTTP_200_OK if required_ok else status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"status": state, "checks": checks},
     )
 
 

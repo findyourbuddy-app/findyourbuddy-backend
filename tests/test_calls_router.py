@@ -43,3 +43,32 @@ def test_get_ice_servers_includes_turn_when_configured(
     assert len(turn_servers) == 1
     assert turn_servers[0]["username"] == "user"
     assert turn_servers[0]["credential"] == "pass"
+
+
+def test_get_ice_servers_issues_short_lived_hmac_credential(
+    client: TestClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    import base64
+    import hashlib
+    import hmac
+
+    from app.config import Settings
+
+    fake_settings = Settings(
+        database_url="sqlite:///:memory:",
+        jwt_secret_key="test-secret",
+        scraper_api_key="test",
+        turn_urls=["turn:turn.example.com:3478"],
+        turn_static_auth_secret="super-secret",
+        turn_credential_ttl_seconds=3600,
+    )
+    monkeypatch.setattr(calls_module, "get_settings", lambda: fake_settings)
+
+    turn = [s for s in client.get("/calls/ice-servers", headers=auth_headers).json()["ice_servers"] if "turn:" in s["urls"]][0]
+
+    expiry_str, _, user_id = turn["username"].partition(":")
+    assert int(expiry_str) > 0 and user_id.isdigit()
+    expected = base64.b64encode(
+        hmac.new(b"super-secret", turn["username"].encode(), hashlib.sha1).digest()
+    ).decode()
+    assert turn["credential"] == expected

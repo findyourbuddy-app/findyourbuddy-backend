@@ -11,11 +11,10 @@ from app.models.user import User
 from app.services.subscription_service import is_premium
 
 _oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+_optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 
-def get_current_user(
-    token: str = Depends(_oauth2_scheme), db: Session = Depends(get_db)
-) -> User:
+def _authenticate_token(token: str, db: Session) -> User:
     credentials_error = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -31,6 +30,12 @@ def get_current_user(
         raise credentials_error
 
     return user
+
+
+def get_current_user(
+    token: str = Depends(_oauth2_scheme), db: Session = Depends(get_db)
+) -> User:
+    return _authenticate_token(token, db)
 
 
 def get_current_staff_user(current_user: User = Depends(get_current_user)) -> User:
@@ -56,4 +61,25 @@ def require_scraper_api_key(x_scraper_api_key: str | None = Header(default=None)
     if x_scraper_api_key is None or not secrets.compare_digest(x_scraper_api_key, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid scraper API key"
+        )
+
+
+def require_metrics_access(
+    x_metrics_api_key: str | None = Header(default=None),
+    token: str | None = Depends(_optional_oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> None:
+    """Allow a Prometheus scrape via the metrics API key (sent as the
+    ``X-Metrics-Api-Key`` header or as a bearer token), or a staff JWT."""
+    configured_key = get_settings().metrics_api_key
+    if configured_key:
+        presented_key = x_metrics_api_key or token
+        if presented_key is not None and secrets.compare_digest(presented_key, configured_key):
+            return
+
+    if token is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    if not _authenticate_token(token, db).is_staff:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Staff privileges required"
         )

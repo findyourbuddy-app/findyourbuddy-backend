@@ -35,4 +35,13 @@ def ai_rate_limit() -> str:
     return f"{get_settings().rate_limit_ai_per_minute}/minute"
 
 
-limiter = Limiter(key_func=get_real_client_ip, default_limits=[default_rate_limit])
+def _limiter_kwargs() -> dict:
+    storage_uri = get_settings().rate_limit_storage_uri
+    return {"storage_uri": storage_uri} if storage_uri else {}
+
+
+limiter = Limiter(
+    key_func=get_real_client_ip,
+    default_limits=[default_rate_limit],
+    **_limiter_kwargs(),
+)

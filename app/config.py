@@ -1,7 +1,19 @@
+import logging
 from functools import lru_cache
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+# Substrings that mark a value as a leftover placeholder rather than a real
+# production secret. Matched case-insensitively.
+_PLACEHOLDER_MARKERS = ("change-me", "changeme", "change_me", "dummy", "sandbox", "placeholder", "your-", "example")
+
+
+def _looks_like_placeholder(value: str) -> bool:
+    lowered = value.lower()
+    return any(marker in lowered for marker in _PLACEHOLDER_MARKERS)
 
 
 class Settings(BaseSettings):
@@ -21,6 +33,10 @@ class Settings(BaseSettings):
     turn_urls: list[str] = []
     turn_username: str = ""
     turn_credential: str = ""
+    # coturn "use-auth-secret" REST API. When set, /calls/ice-servers issues a
+    # short-lived HMAC credential per request instead of the static pair above.
+    turn_static_auth_secret: str = ""
+    turn_credential_ttl_seconds: int = 86400
 
     @field_validator("turn_urls", mode="before")
     @classmethod
@@ -49,6 +65,10 @@ class Settings(BaseSettings):
     rate_limit_messages_per_minute: int = 30
     rate_limit_event_writes_per_minute: int = 20
     rate_limit_ai_per_minute: int = 5
+    # Empty -> in-memory counters (fine for a single process). Set to a shared
+    # store (e.g. the Redis URL) so limits stay correct across multiple workers
+    # or hosts -- otherwise each process enforces its own copy of the limit.
+    rate_limit_storage_uri: str = ""
 
     moderation_banned_words: str = "spam,scam"
 
@@ -58,6 +78,9 @@ class Settings(BaseSettings):
     novita_vision_model: str = "qwen/qwen3.6-27b"
 
     scraper_api_key: str
+    # Lets Prometheus scrape /health/metrics without a staff JWT. Empty = only
+    # a staff JWT is accepted (endpoint stays private).
+    metrics_api_key: str = ""
 
     # Firebase Admin service account, as raw JSON (single line). Used to
     # relay chat messages into Firestore server-side, after moderation and
@@ -157,15 +180,52 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_production_secrets(self) -> "Settings":
-        if self.environment == "production":
-            if "sandbox" in self.iyzico_api_key or "dummy" in self.iyzico_api_key:
-                raise ValueError("iyzico_api_key must be a real production key in production environment")
-            if "sandbox" in self.iyzico_secret_key or "dummy" in self.iyzico_secret_key:
-                raise ValueError("iyzico_secret_key must be a real production key in production environment")
-            if "sandbox" in self.iyzico_base_url:
-                raise ValueError("iyzico_base_url must be the production endpoint in production environment")
-            if not self.public_base_url:
-                raise ValueError("public_base_url must be set in production environment")
+        if self.environment != "production":
+            return self
+
+        errors: list[str] = []
+
+        # Payments
+        if _looks_like_placeholder(self.iyzico_api_key):
+            errors.append("iyzico_api_key must be a real production key")
+        if _looks_like_placeholder(self.iyzico_secret_key):
+            errors.append("iyzico_secret_key must be a real production key")
+        if "sandbox" in self.iyzico_base_url:
+            errors.append("iyzico_base_url must be the production endpoint")
+
+        # URLs / CORS
+        if not self.public_base_url:
+            errors.append("public_base_url must be set")
+        if "*" in self.cors_allowed_origins:
+            errors.append("cors_allowed_origins must not contain '*' -- list explicit origins")
+
+        # Auth / API keys
+        if _looks_like_placeholder(self.jwt_secret_key) or len(self.jwt_secret_key) < 32:
+            errors.append("jwt_secret_key must be a strong, non-placeholder value (>= 32 chars)")
+        if _looks_like_placeholder(self.scraper_api_key):
+            errors.append("scraper_api_key must be a real value, not a placeholder")
+        if self.metrics_api_key and _looks_like_placeholder(self.metrics_api_key):
+            errors.append("metrics_api_key must be a real value, not a placeholder")
+
+        # Password reset delivery -- without SMTP the reset code only lands in
+        # the logs and the user never gets it, while the endpoint still says 200.
+        if not (self.smtp_host and self.smtp_username and self.smtp_password):
+            errors.append("smtp_host / smtp_username / smtp_password must all be set (password reset needs email)")
+
+        # Data retention -- the 0.25 (6h) dev value would wipe events almost
+        # immediately in production.
+        if self.event_retention_days < 1:
+            errors.append("event_retention_days looks like a dev value (< 1); set a real retention period")
+
+        if errors:
+            raise ValueError(
+                "invalid production configuration:\n  - " + "\n  - ".join(errors)
+            )
+
+        if not self.sentry_dsn:
+            logger.warning(
+                "sentry_dsn is not set -- running in production without error tracking"
+            )
         return self
 
 

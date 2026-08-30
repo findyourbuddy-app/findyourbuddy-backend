@@ -5,7 +5,9 @@ FastAPI · SQLAlchemy 2.0 · Postgres (Supabase) · Alembic · slowapi · APSche
 
 Mimari, veri akışı, eşleşme/trust/kota algoritmaları ve datetime sözleşmesi için:
 **[docs/mimari.md](docs/mimari.md)**. Alınan tekil teknik kararlar
-`docs/tech-kararlari.md`, yol haritası `docs/yapilacaklar.md`.
+`docs/tech-kararlari.md`, yol haritası `docs/yapilacaklar.md`. Deploy sırası,
+yedekleme/felaket kurtarma, staff erişim SOP'u ve olay müdahalesi:
+**[docs/production-runbook.md](docs/production-runbook.md)**.
 
 Öne çıkanlar:
 - **Datetime:** tüm UTC datetime'lar `Z` OLMADAN serialize edilir (naive UTC).
