@@ -29,6 +29,10 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
+    # Advisory: surfaces known CVEs in the run log without blocking unrelated
+    # work on a transitive-dep advisory. Review the output and bump deps
+    # (Dependabot opens the PRs).
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 

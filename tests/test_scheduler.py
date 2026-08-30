@@ -1,8 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy.orm import Session
 
-from app.core.scheduler import run_cleanup_jobs
+import app.core.scheduler as scheduler_module
+from app.config import get_settings
+from app.core.scheduler import run_cleanup_jobs, start_scheduler
 from app.schemas.event import EventCreate
 from app.schemas.user import UserCreate
 from app.services.auth_service import register_user, request_password_reset, reset_password
@@ -45,3 +48,18 @@ def test_run_cleanup_jobs_reports_deleted_counts(db_session: Session) -> None:
     assert result["no_shows_penalized"] == 0
     assert result["accounts_suspended"] == 0
     assert "trust_scores_recomputed" in result
+
+
+def test_run_cleanup_jobs_skips_when_lock_held(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(scheduler_module, "_acquire_cleanup_lock", lambda session: False)
+
+    result = run_cleanup_jobs(db_session)
+
+    assert result == {k: 0 for k in result}
+
+
+def test_start_scheduler_disabled_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(get_settings(), "scheduler_enabled", False)
+    assert start_scheduler() is None

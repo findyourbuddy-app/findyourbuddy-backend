@@ -1,12 +1,10 @@
 from unittest.mock import patch
-from fastapi.testclient import TestClient
-from app.main import app
 
-client = TestClient(app)
+from fastapi.testclient import TestClient
 
 
 @patch("firebase_admin.auth.verify_id_token")
-def test_firebase_login_provisions_new_user(mock_verify):
+def test_firebase_login_provisions_new_user(mock_verify, client: TestClient) -> None:
     mock_verify.return_value = {
         "uid": "test_firebase_uid_12345",
         "phone_number": "+905551234567",
@@ -22,7 +20,7 @@ def test_firebase_login_provisions_new_user(mock_verify):
 
 
 @patch("firebase_admin.auth.verify_id_token")
-def test_firebase_login_invalid_token_returns_401(mock_verify):
+def test_firebase_login_invalid_token_returns_401(mock_verify, client: TestClient) -> None:
     mock_verify.side_effect = ValueError("Token expired")
 
     res = client.post("/auth/firebase-login", json={"id_token": "invalid_token"})
