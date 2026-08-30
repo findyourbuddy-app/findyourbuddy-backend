@@ -130,20 +130,33 @@ layer. Add a second layer at the edge:
 
 Symptom: `/health/` times out, all requests hang, does not self-recover after
 load drops. Cause: the sync request threadpool is exhausted by DB calls that
-are themselves stuck (no statement/socket timeout), so even trivial endpoints
-can't get a thread.
+are themselves stuck, so even trivial endpoints can't get a thread.
 
-- **Immediate:** restart the process/pod. It will not recover on its own.
-- **Fix forward:**
-  - Run multiple workers: `gunicorn -k uvicorn.workers.UvicornWorker -w N`.
-  - Set a Postgres `statement_timeout` on the connection (e.g. `options=-c
-    statement_timeout=8000`) and a socket `connect_timeout`, so a slow DB
-    fails fast instead of pinning a thread forever.
-  - Move the APScheduler jobs out of the web process (or guard them so only
-    one worker runs them).
-  - Consider a Redis-backed rate limiter (`RATE_LIMIT_STORAGE_URI`) once there
-    is more than one worker — otherwise each worker enforces its own copy of
-    every limit.
+**Mitigations now in place** (defaults in `.env.example` / `gunicorn.conf.py`):
+
+- **`DB_STATEMENT_TIMEOUT_MS`** (8s) + `DB_LOCK_TIMEOUT_MS` (4s) +
+  `idle_in_transaction_session_timeout` — Postgres kills a slow query/lock so
+  the handler thread is released instead of pinned forever.
+- **`DB_CONNECT_TIMEOUT_S`** + TCP keepalives — a half-open socket to Supabase
+  is detected, not blocked on.
+- **`DB_POOL_TIMEOUT_S`** (10s) — a request waiting for a pooled connection
+  fails fast rather than stacking.
+- **gunicorn with N workers** (`WEB_CONCURRENCY`, default `2*CPU+1`) +
+  `--max-requests` recycling + a hard `timeout`.
+- Scheduler: guarded by a Postgres advisory lock, so the cleanup pass runs
+  once even with several workers.
+
+**If it still wedges:**
+
+- **Immediate:** restart the process/pod (one worker recycling won't fix a
+  full pool stall).
+- Lower `DB_STATEMENT_TIMEOUT_MS`, raise `WEB_CONCURRENCY`, check Supabase for
+  a runaway query or a connection leak (`supabase_db_active_connections` near
+  30 on dashboard 3).
+- Multiple hosts: set `SCHEDULER_ENABLED=false` on the web fleet and run one
+  dedicated process with it `true`.
+- Move the rate limiter to Redis (`RATE_LIMIT_STORAGE_URI`) so N workers don't
+  each enforce their own copy of every limit.
 
 ### Redis down
 

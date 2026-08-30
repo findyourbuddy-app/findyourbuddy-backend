@@ -55,11 +55,11 @@ _is_production = settings.environment == "production"
 async def lifespan(app: FastAPI):
     from app.core.scheduler import run_cleanup_jobs
 
-    start_scheduler()
-    try:
-        run_cleanup_jobs()
-    except Exception:
-        _logger.exception("Startup cleanup jobs failed")
+    if start_scheduler() is not None:
+        try:
+            run_cleanup_jobs()
+        except Exception:
+            _logger.exception("Startup cleanup jobs failed")
 
     yield
 

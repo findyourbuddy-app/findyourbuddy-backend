@@ -24,6 +24,7 @@ dependencies = [
     "redis==5.2.1",
     "iyzipay",
     "uvicorn[standard]==0.34.0",
+    "gunicorn==23.0.0",
     "numpy==2.2.1",
     "openai>=1.0.0",
     "boto3>=1.43.73",

@@ -66,8 +66,13 @@ services:
       REDIS_URL: redis://redis:6379/0
     volumes:
       - findyourbuddy_media:/app/media
+    # Single-server convenience: migrate, then serve with several gunicorn
+    # workers (tune with WEB_CONCURRENCY). The periodic scheduler runs in every
+    # worker but a Postgres advisory lock means the job body executes once;
+    # across multiple hosts, set SCHEDULER_ENABLED=false here and run one
+    # dedicated process with it true (see docs/production-runbook.md).
     command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+      sh -c "alembic upgrade head && gunicorn app.main:app -c gunicorn.conf.py"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/', timeout=3)"]
       interval: 15s

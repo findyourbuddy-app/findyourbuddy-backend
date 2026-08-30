@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     database_url: str
+    # Postgres connection pool + timeouts. statement_timeout is the important
+    # one: it caps how long a single query can pin a request-handler thread,
+    # so one slow DB moment can't cascade into an unrecoverable freeze.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout_s: int = 10
+    db_pool_recycle_s: int = 1800
+    db_connect_timeout_s: int = 10
+    db_statement_timeout_ms: int = 8000
+    db_lock_timeout_ms: int = 4000
     redis_url: str | None = None
     iyzico_api_key: str = "sandbox-dummy-api-key"
     iyzico_secret_key: str = "sandbox-dummy-secret-key"
@@ -149,6 +159,10 @@ class Settings(BaseSettings):
 
     event_retention_days: float = 0.25
     scheduler_interval_hours: float = 6.0
+    # The periodic cleanup jobs (see app/core/scheduler.py). With more than one
+    # web worker, disable this on the workers and run one dedicated process with
+    # it enabled -- a Postgres advisory lock still guards against overlap.
+    scheduler_enabled: bool = True
 
     # Trust score is a 0-100 value recomputed from a user's real signals (see
     # trust_service.recompute_trust_score) -- never an unbounded running total.
