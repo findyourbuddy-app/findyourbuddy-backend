@@ -4,6 +4,7 @@ from app.config import get_settings
 from app.schemas.user import UserCreate
 from app.services.auth_service import register_user
 from app.services.vision_verification_service import verify_user_photo_with_vision
+from tests._prod_env import apply_valid_production_env
 
 
 def test_verify_user_photo_without_profile_photo(db_session) -> None:
@@ -27,12 +28,8 @@ def test_verify_user_photo_without_profile_photo(db_session) -> None:
 
 def test_verify_user_photo_without_api_key_in_production_fails(db_session, monkeypatch) -> None:
     get_settings.cache_clear()
+    apply_valid_production_env(monkeypatch)
     monkeypatch.setenv("NOVITA_API_KEY", "")
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("IYZICO_API_KEY", "prod-real-api-key")
-    monkeypatch.setenv("IYZICO_SECRET_KEY", "prod-real-secret-key")
-    monkeypatch.setenv("IYZICO_BASE_URL", "api.iyzipay.com")
-    monkeypatch.setenv("PUBLIC_BASE_URL", "https://findyourbuddy.dev")
 
     user = register_user(
         db_session,

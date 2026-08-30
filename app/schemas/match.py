@@ -10,7 +10,7 @@ class MatchRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    event_id: int
+    event_id: int | None = None
     event_title: str | None = None
     event_category: str | None = None
     event_is_group: bool = False

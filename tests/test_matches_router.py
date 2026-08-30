@@ -56,6 +56,24 @@ def test_mutual_like_creates_match_visible_via_api(client: TestClient) -> None:
     assert matches[0]["last_message"] is None
 
 
+def test_general_browse_mutual_like_creates_match_with_null_event(client: TestClient) -> None:
+    a_headers = _register_and_login(client, "a@example.com")
+    b_headers = _register_and_login(client, "b@example.com")
+    a_id = client.get("/users/me", headers=a_headers).json()["id"]
+    b_id = client.get("/users/me", headers=b_headers).json()["id"]
+
+    client.post("/swipes/", headers=a_headers, json={"target_id": b_id, "direction": "like"})
+    client.post("/swipes/", headers=b_headers, json={"target_id": a_id, "direction": "like"})
+
+    response = client.get("/matches/", headers=a_headers)
+    assert response.status_code == 200
+    matches = response.json()
+    assert len(matches) == 1
+    assert matches[0]["event_id"] is None
+    assert matches[0]["event_title"] is None
+    assert matches[0]["other_user"]["id"] == b_id
+
+
 def test_match_response_includes_last_message_after_chatting(client: TestClient) -> None:
     a_headers = _register_and_login(client, "a@example.com")
     b_headers = _register_and_login(client, "b@example.com")

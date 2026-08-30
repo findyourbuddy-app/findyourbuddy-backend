@@ -26,3 +26,17 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -q
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Export locked dependencies
+        run: uv export --frozen --no-hashes --no-emit-project -o requirements-audit.txt
+
+      - name: Scan dependencies for known CVEs
+        run: uvx pip-audit -r requirements-audit.txt

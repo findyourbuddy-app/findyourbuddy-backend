@@ -93,6 +93,12 @@ def _no_real_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     candidate list. Disabling the client keeps tests deterministic
     regardless of whether the machine running them has Redis configured."""
     monkeypatch.setattr(CacheService, "_get_client", classmethod(lambda cls: None))
+    # The /health/ready probe pings Redis directly; keep it deterministic too.
+    import app.routers.health as health_module
+
+    monkeypatch.setattr(
+        health_module, "_probe_redis", lambda url: "ok" if url else "not_configured"
+    )
 
 
 @pytest.fixture()
